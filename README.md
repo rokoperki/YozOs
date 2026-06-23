@@ -5,7 +5,22 @@ borrowed kernel code.
 
 ## Status
 
-Early development - 16bit loop_bootloader
+Early development — 16-bit real-mode bootloader. It can now load extra sectors
+off the boot drive via BIOS (`int 0x13`) and read the data back, on top of the
+earlier stack setup and screen output (hex printing via `int 0x10`, string
+printing via BIOS teletype).
+
+## Source
+
+| File               | Role                                                             |
+| ------------------ | --------------------------------------------------------------- |
+| `boot_sect.asm`    | Boot sector entry — stack setup, disk load, hex dump            |
+| `disk_load.asm`    | `disk_load` — reads `DH` sectors into `ES:BX` from drive `DL`   |
+| `print_string.asm` | `print_string` (BIOS teletype) and `print_hex` helpers          |
+
+The bootloader is drive-agnostic: it saves the drive number BIOS passes in `DL`
+and reads from that, so it works whether booted from a floppy (`0x00`) or a hard
+disk / USB (`0x80`).
 
 ## Toolchain (macOS)
 
@@ -22,19 +37,19 @@ brew install i686-elf-gcc i686-elf-binutils nasm qemu
 Assemble the boot sector:
 
 ```bash
-nasm -f bin boot.asm -o boot.bin
+nasm -f bin boot_sect.asm -o boot_sect.bin
 ```
 
 Run it in QEMU:
 
 ```bash
-qemu-system-i386 -drive format=raw,file=boot.bin
+qemu-system-i386 -drive format=raw,file=boot_sect.bin
 ```
 
 To debug the silent triple-faults during early boot, log interrupts and CPU state:
 
 ```bash
-qemu-system-i386 -drive format=raw,file=boot.bin -d int,cpu
+qemu-system-i386 -drive format=raw,file=boot_sect.bin -d int,cpu
 ```
 
 ## Target Stack
