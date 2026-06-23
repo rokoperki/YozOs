@@ -6,3 +6,4 @@ instruction_set = "x86/x86-64"
 
 [project.opts]
 compiler = "nasm"
+compile_flags_txt = "compile_flags.txt"
