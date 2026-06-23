@@ -1,28 +1,36 @@
 ;simple boot that demonstrates segnment offseting
+[org 0x7c00]
 
-mov ah, 0x0e ; scrolling teletype BIOS routine 
+mov [BOOT_DRIVE], dl ; BIOS stores our boot drive in DL
 
-mov al, [the_secret]
-int 0x10
+mov bp, 0x8000  ; setup stack 
+mov sp, bp
 
-mov bx, 0x7c0 ; set data segment register to 0x7c0 
-mov ds, bx 
-mov al, [the_secret]
-int 0x10
+mov bx, 0x9000  ; load 5 sectors from es 0x0000 to bx 0x9000 
+mov dh, 2       ; from boot disk 
+mov dl, [BOOT_DRIVE]
+call disk_load
 
-mov al, [es:the_secret]
-int 0x10
+mov dx, [0x9000]
+call print_hex
 
-mov bx, 0x7c0 ; set general purpose segment register address 
-mov es, bx 
-mov al, [es:the_secret]
-int 0x10
+mov bx, TAB
+call print_string 
+
+mov dx, [0x9000 + 512]
+call print_hex
 
 jmp $
 
-the_secret:
-  db "X"
+%include "print_string.asm"
+%include "disk_load.asm"
 
-;padding and BIOS num 
-times 510-($-$$) db 0 
+BOOT_DRIVE: db 0
+TAB: db "  -  ", 0 
+
+times 510-($-$$) db 0
 dw 0xaa55
+
+; data seed to read 
+times 256 dw 0xdada
+times 256 dw 0xface

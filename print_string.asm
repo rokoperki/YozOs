@@ -15,7 +15,7 @@ print_hex:
 
   start_hex:
   mov ax, dx
-  and ax, 0x000f
+  and ax, 0x000f     ; 0x1fb6 and 0x000f = 0x0006 
   add al, '0'        ; assume it's a digit
   cmp al, '9'        ; did we overshoot past '9'
   jle done           ; no -> it was 0..9, leave it
@@ -33,3 +33,5 @@ print_hex:
     mov bx, HEX_OUT
     call print_string 
     ret
+
+HEX_OUT: db "0x0000", 0
