@@ -1,18 +1,28 @@
-;simple boot that prints hex address using custom function 
+;simple boot that demonstrates segnment offseting
 
-[org 0x7c00]
+mov ah, 0x0e ; scrolling teletype BIOS routine 
 
-mov dx, 0x1fa6
-call print_hex
+mov al, [the_secret]
+int 0x10
+
+mov bx, 0x7c0 ; set data segment register to 0x7c0 
+mov ds, bx 
+mov al, [the_secret]
+int 0x10
+
+mov al, [es:the_secret]
+int 0x10
+
+mov bx, 0x7c0 ; set general purpose segment register address 
+mov es, bx 
+mov al, [es:the_secret]
+int 0x10
 
 jmp $
 
-%include "print_string.asm"
+the_secret:
+  db "X"
 
-;data 
-HEX_OUT:
-  db '0x0000', 0 
-
-
+;padding and BIOS num 
 times 510-($-$$) db 0 
-dw 0xaa55 
+dw 0xaa55
