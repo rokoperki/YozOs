@@ -1,37 +1,34 @@
-;simple boot that demonstrates segnment offseting
+; boot sector that enters 32 bit mode 
 [org 0x7c00]
 
-mov [BOOT_DRIVE], dl ; BIOS stores our boot drive in DL
+mov bp, 0x9000     ;set the stack 
+mov sp, bp 
 
-mov bp, 0x8000  ; setup stack 
-mov sp, bp
-
-mov bx, 0x9000  ; load 5 sectors from es 0x0000 to bx 0x9000 
-mov dh, 2       ; from boot disk 
-mov dl, [BOOT_DRIVE]
-call disk_load
-
-mov dx, [0x9000]
-call print_hex
-
-mov bx, TAB
+mov bx, MSG_REAL_MODE
 call print_string 
 
-mov dx, [0x9000 + 512]
-call print_hex
+call switch_to_pm
 
 jmp $
 
-%include "print_hex.asm"
 %include "print_string.asm"
-%include "disk_load.asm"
+%include "gdt.asm"
+%include "print_string_pm.asm"
+%include "pm_switch.asm"
 
-BOOT_DRIVE: db 0
-TAB: db "  -  ", 0 
+[bits 32]
 
+;This is where we arrive after switching to and initialising protected mode.
+BEGIN_PM:
+  mov ebx, MSG_PROT_MODE
+  call print_string_pm
+  
+jmp $
+
+; Global variables
+MSG_REAL_MODE db "started in 16 - bit Real Mode ",0
+MSG_PROT_MODE db "Successfully landed in 32 - bit Protected Mode ",0
+
+; Bootsector padding
 times 510-($-$$) db 0
 dw 0xaa55
-
-; data seed to read 
-times 256 dw 0xdada
-times 256 dw 0xface
