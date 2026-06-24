@@ -5,22 +5,26 @@ borrowed kernel code.
 
 ## Status
 
-Early development — 16-bit real-mode bootloader. It can now load extra sectors
-off the boot drive via BIOS (`int 0x13`) and read the data back, on top of the
-earlier stack setup and screen output (hex printing via `int 0x10`, string
-printing via BIOS teletype).
+Early development — the boot sector boots in 16-bit real mode, prints a message
+via BIOS teletype, then switches the CPU into 32-bit protected mode. It loads a
+Global Descriptor Table (flat code/data segments), sets the protected-mode bit in
+`cr0`, far-jumps to flush the prefetch pipeline, reloads the segment registers,
+and prints directly to VGA memory from 32-bit code.
 
 ## Source
 
-| File               | Role                                                             |
-| ------------------ | --------------------------------------------------------------- |
-| `boot_sect.asm`    | Boot sector entry — stack setup, disk load, hex dump            |
-| `disk_load.asm`    | `disk_load` — reads `DH` sectors into `ES:BX` from drive `DL`   |
-| `print_string.asm` | `print_string` (BIOS teletype) and `print_hex` helpers          |
+| File                  | Role                                                                                |
+| --------------------- | ----------------------------------------------------------------------------------- |
+| `boot_sect.asm`       | Boot sector entry — stack setup, real-mode message, PM switch, 32-bit `BEGIN_PM`     |
+| `gdt.asm`             | Global Descriptor Table (null/code/data) and `gdt_descriptor`                       |
+| `pm_switch.asm`       | `switch_to_pm` — clear interrupts, `lgdt`, set `cr0`, far-jump, reload segments      |
+| `print_string_pm.asm` | `print_string_pm` — writes a string to VGA memory (`0xb8000`) in 32-bit mode         |
+| `print_string.asm`    | `print_string` — real-mode string printing via BIOS teletype (`int 0x10`)            |
+| `print_hex.asm`       | `print_hex` — prints a 16-bit value as hex via `int 0x10`                            |
+| `disk_load.asm`       | `disk_load` — reads `DH` sectors into `ES:BX` from drive `DL` (`int 0x13`)            |
 
-The bootloader is drive-agnostic: it saves the drive number BIOS passes in `DL`
-and reads from that, so it works whether booted from a floppy (`0x00`) or a hard
-disk / USB (`0x80`).
+`disk_load` and `print_hex` are not wired into the current boot path — they remain
+from the earlier real-mode work and will be reused once a kernel is loaded off disk.
 
 ## Toolchain (macOS)
 
@@ -46,7 +50,8 @@ Run it in QEMU:
 qemu-system-i386 -drive format=raw,file=boot_sect.bin
 ```
 
-To debug the silent triple-faults during early boot, log interrupts and CPU state:
+To debug silent triple-faults during the protected-mode switch, log interrupts
+and CPU state:
 
 ```bash
 qemu-system-i386 -drive format=raw,file=boot_sect.bin -d int,cpu
