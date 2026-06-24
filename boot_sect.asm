@@ -22,6 +22,7 @@ call print_hex
 
 jmp $
 
+%include "print_hex.asm"
 %include "print_string.asm"
 %include "disk_load.asm"
 
