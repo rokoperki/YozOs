@@ -1,6 +1,6 @@
 ; boot sector that boots C kernel i 32-bit protected mode 
 [org 0x7c00]
-KERNEL_OFFSET equ 0x1000    ; memory where we load kernel 
+KERNEL_OFFSET equ 0x1000    ; memory where we load kernel (and where kernel_entry sits)
 
 mov [BOOT_DRIVE], dl        ; BIOS Stores our boot drive in DL
 
@@ -42,7 +42,7 @@ BEGIN_PM:
   mov ebx, MSG_PROT_MODE      ;announce protected mode
   call print_string_pm
 
-  call KERNEL_OFFSET          ; jump to address of loaded kernel code
+  call KERNEL_OFFSET ; jump to 0x1000 — the kernel_entry stub, which calls main
 
   jmp $
 

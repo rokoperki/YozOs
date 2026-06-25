@@ -54,8 +54,19 @@ disasm-boot: $(BOOT_BIN)
 kernel.o: kernel.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-kernel.bin: kernel.o
-	$(LD) $(LDFLAGS) -Ttext 0x1000 -e main --oformat binary -o $@ $<
+# Entry stub — assembled as an ELF object so the linker can resolve `extern main`.
+kernel_entry.o: boot/kernel_entry.asm
+	$(ASM) $< -f elf -o $@
+
+# kernel_entry.o MUST come first so the byte at 0x1000 is the stub (which calls
+# main), not whatever function gcc happened to place first in kernel.o.
+kernel.bin: kernel_entry.o kernel.o
+	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ kernel_entry.o kernel.o
+
+# Raw flat kernel (no ELF header — tell objdump the arch explicitly). 32-bit,
+# so no addr16/data16 (unlike the 16-bit boot sector).
+disasm-kernel: kernel.bin
+	$(OBJDUMP) -D -b binary -m i386 -Mintel kernel.bin
 
 # --- OS image (bootable disk) -----------------------------------------------
 # Disk layout: sector 0 = boot sector, sector 1+ = kernel. The boot sector
@@ -78,7 +89,7 @@ run-boot: $(BOOT_BIN)
 	$(QEMU) -drive format=raw,file=$(BOOT_BIN),index=0,if=floppy
 
 # --- Phony ------------------------------------------------------------------
-.PHONY: all boot basic kernel image run run-boot disasm-boot disasm-basic clean
+.PHONY: all boot basic kernel image run run-boot disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 boot: $(BOOT_BIN)
 basic: basic.bin basic.dis
@@ -87,4 +98,4 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      kernel.o kernel.bin $(OS_IMAGE)
+	      kernel.o kernel_entry.o kernel.bin $(OS_IMAGE)
