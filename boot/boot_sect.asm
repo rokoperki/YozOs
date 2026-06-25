@@ -1,33 +1,56 @@
-; boot sector that enters 32 bit mode 
+; boot sector that boots C kernel i 32-bit protected mode 
 [org 0x7c00]
+KERNEL_OFFSET equ 0x1000    ; memory where we load kernel 
 
-mov bp, 0x9000     ;set the stack 
+mov [BOOT_DRIVE], dl        ; BIOS Stores our boot drive in DL
+
+mov bp, 0x9000              ; setup stack 
 mov sp, bp 
 
 mov bx, MSG_REAL_MODE
-call print_string 
+call print_string           ; announce that 16-bit real mode boot 
+
+call load_kernel
 
 call switch_to_pm
 
-jmp $
+jmp $ 
 
 %include "print_string.asm"
+%include "disk_load.asm"
 %include "gdt.asm"
 %include "print_string_pm.asm"
 %include "pm_switch.asm"
 
+[bits 16]
+
+load_kernel:
+  mov bx, MSG_LOAD_KERNEL    
+  call print_string
+
+  mov bx, KERNEL_OFFSET       ; set params of disk_load so that we load first 15 sectors 
+  mov dh, 15                  ; excluding boot, from boot disk to address KERNEL_OFFSET
+  mov dl, [BOOT_DRIVE]
+  call disk_load
+
+  ret 
+
 [bits 32]
 
-;This is where we arrive after switching to and initialising protected mode.
 BEGIN_PM:
-  mov ebx, MSG_PROT_MODE
+
+  mov ebx, MSG_PROT_MODE      ;announce protected mode
   call print_string_pm
-  
-jmp $
+
+  call KERNEL_OFFSET          ; jump to address of loaded kernel code
+
+  jmp $
 
 ; Global variables
-MSG_REAL_MODE db "started in 16 - bit Real Mode ",0
-MSG_PROT_MODE db "Successfully landed in 32 - bit Protected Mode ",0
+BOOT_DRIVE db 0
+MSG_REAL_MODE db "Started in 16 - bit Real Mode " , 0
+MSG_PROT_MODE db "Successfully landed in 32 - bit Protected Mode " , 0
+MSG_LOAD_KERNEL db "Loading kernel into memory. " , 0
 
 ; Bootsector padding
 times 510-($-$$) db 0
