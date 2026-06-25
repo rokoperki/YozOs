@@ -1,12 +1,28 @@
-void some_function() {}
+#include "drivers/screen.h"
 
 int main() {
-  // create a pointer to a char and point it to first cell of video memory
-  // (top-left of screen)
-  int *video_memory = (int *)0xb8000;
+  clear_screen();
 
-  // at the address pointet to store char X
-  *video_memory = 0x2f59;
+  print("\n");
+  print("  __    __    ______   ________   ______    ______   \n");
+  print(" /  |  /  |  /      \\ /        | /      \\  /      \\  \n");
+  print(" $$ |  $$ | /$$$$$$  |$$$$$$$$/ /$$$$$$  |/$$$$$$  | \n");
+  print(" $$ |  $$ | $$ |  $$ |   /$$/  $$ |  $$ |$$ \\__$$/  \n");
+  print(" $$  \\/$$/  $$ |  $$ |  /$$/   $$ |  $$ |$$      \\   \n");
+  print("  $$  $$<   $$ |  $$ | /$$/    $$ |  $$ | $$$$$$  |  \n");
+  print("   $$$$  \\  $$ \\__$$ |/$$/____ $$ \\__$$ |/  \\__$$ |  \n");
+  print("    $$  |   $$    $$/ $$       |$$    $$/ $$    $$/   \n");
+  print("    $$/      $$$$$$/  $$$$$$$$/  $$$$$$/   $$$$$$/    \n");
+  print("\n");
+  print("  ======================================================= \n");
+  print("             a hobby x86 OS from scratch   \n");
+  print("  ======================================================= \n");
+  print("\n");
+  print("   [ ok ] boot sector\n");
+  print("   [ ok ] protected mode\n");
+  print("   [ ok ] screen driver online\n");
+  print("\n");
+  print("   YozOs> _\n");
 
   return 0;
 }

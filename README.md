@@ -9,7 +9,8 @@ Built on macOS (Apple Silicon) with a cross-compiler, following the
 
 ## Status
 
-The boot pipeline is complete end to end:
+The boot pipeline is complete end to end, and the kernel now drives the screen
+through a proper **C driver** instead of poking video memory by hand:
 
 1. BIOS loads the **boot sector** at `0x7c00` in 16-bit real mode.
 2. The boot sector sets up a stack and prints a real-mode banner over BIOS
@@ -21,11 +22,12 @@ The boot pipeline is complete end to end:
 5. In 32-bit protected mode it reloads the segment registers, resets the stack,
    prints a protected-mode banner straight to **VGA memory** (`0xb8000`), and
    `call`s into the kernel at `0x1000`.
-6. The kernel entry stub calls `main()`, which writes a character cell directly
-   to the VGA text buffer.
+6. The kernel entry stub calls `main()`, which uses the **screen driver** to
+   clear the screen and print via `print()` / `print_at()`.
 
-The kernel itself is still a stub — the milestone here is the boot path, not OS
-features.
+The current milestone is the first real driver: a VGA text-mode screen driver
+(`drivers/screen.c`) with cursor control, scrolling, and newline handling, built
+on a port-I/O helper (`drivers/low_level.c`).
 
 ## Boot flow
 
@@ -42,7 +44,14 @@ BIOS ──► 0x7c00  boot_sect.asm   [16-bit real mode]
                  │ print banner ─► print_string_pm.asm  (writes to 0xb8000)
                  │ call 0x1000 ──► kernel_entry.asm stub
                  ▼
-             main()  in kernel.c  ─► writes to VGA buffer (0xb8000)
+             main()  in kernel.c
+                 │ clear_screen() / print()
+                 ▼
+        drivers/screen.c  ─► chars to VGA buffer (0xb8000)
+                          ─► cursor via CRTC ports (0x3d4/0x3d5)
+                                 │
+                                 ▼
+        drivers/low_level.c  ─► port_byte_in / port_byte_out (in/out)
 ```
 
 ## Layout
@@ -67,8 +76,20 @@ assembled into one flat 512-byte binary.
 
 | File       | Role                                                                              |
 | ---------- | --------------------------------------------------------------------------------- |
-| `kernel.c` | The 32-bit C kernel — `main()`, linked at `0x1000`, writes to VGA memory          |
+| `kernel.c` | The 32-bit C kernel — `main()`, linked at `0x1000`, drives the screen driver      |
 | `basic.c`  | Standalone C scratch, for studying compiler output / disassembly (not booted)     |
+
+### Drivers — `drivers/`
+
+| File           | Role                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| `screen.c/.h`  | VGA text-mode screen driver — `print`, `print_at`, `clear_screen`, cursor, scrolling, `\n` |
+| `low_level.c/.h` | Port I/O primitives — `port_byte_in` / `port_byte_out` (x86 `in`/`out` via inline asm)   |
+
+The screen driver writes character cells straight to video memory at `0xb8000`
+and steers the hardware cursor through the VGA CRTC index/data ports
+(`0x3d4` / `0x3d5`). `low_level.c` uses x86-only register constraints, so it must
+be built with the `i686-elf` cross-compiler, not host Clang.
 
 ## Toolchain (macOS)
 

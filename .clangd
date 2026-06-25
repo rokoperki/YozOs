@@ -1,0 +1,11 @@
+# Parse this project as 32-bit bare-metal x86 (matches the i686-elf-gcc build),
+# not the host arm64 target. Without this, clangd flags the x86 inline-asm
+# register constraints ("a"/"d") in low_level.c as invalid.
+CompileFlags:
+  Add:
+    - --target=i686-elf
+    - -ffreestanding
+    - -fno-pie
+  Remove:
+    - -m*
+    - -arch

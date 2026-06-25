@@ -51,8 +51,19 @@ disasm-boot: $(BOOT_BIN)
 
 # --- Kernel -----------------------------------------------------------------
 # Linked to run at 0x1000 — the address the boot sector loads it to and jumps.
-kernel.o: kernel.c
-	$(CC) $(CFLAGS) -c $< -o $@
+#
+# Kernel C sources: top-level kernel + every driver (port I/O lives in
+# drivers/low_level.c). basic.c is standalone scratch and is deliberately NOT in
+# this list, so it never gets linked into the kernel.
+C_SOURCES := kernel.c $(wildcard drivers/*.c)
+OBJ       := $(C_SOURCES:.c=.o)
+
+# Generic rule for any kernel C source. -I. lets drivers/*.c include top-level
+# headers such as low_level.h. The i686-elf cross-compiler is required: the
+# "a"/"d" register constraints in low_level.c are x86-only and fail under host
+# clang (arm64).
+%.o: %.c
+	$(CC) $(CFLAGS) -I. -c $< -o $@
 
 # Entry stub — assembled as an ELF object so the linker can resolve `extern main`.
 kernel_entry.o: boot/kernel_entry.asm
@@ -60,8 +71,8 @@ kernel_entry.o: boot/kernel_entry.asm
 
 # kernel_entry.o MUST come first so the byte at 0x1000 is the stub (which calls
 # main), not whatever function gcc happened to place first in kernel.o.
-kernel.bin: kernel_entry.o kernel.o
-	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ kernel_entry.o kernel.o
+kernel.bin: kernel_entry.o $(OBJ)
+	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ $^
 
 # Raw flat kernel (no ELF header — tell objdump the arch explicitly). 32-bit,
 # so no addr16/data16 (unlike the 16-bit boot sector).
@@ -98,4 +109,4 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      kernel.o kernel_entry.o kernel.bin $(OS_IMAGE)
+	      kernel_entry.o kernel.bin $(OBJ) $(OS_IMAGE)
