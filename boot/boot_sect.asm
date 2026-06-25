@@ -2,10 +2,15 @@
 [org 0x7c00]
 KERNEL_OFFSET equ 0x1000    ; memory where we load kernel (and where kernel_entry sits)
 
-mov [BOOT_DRIVE], dl        ; BIOS Stores our boot drive in DL
+xor ax, ax                  ; zero the segment registers first — BIOS doesn't
+mov ds, ax                  ; guarantee they're 0 on real hardware, and the
+mov es, ax                  ; disk read + string prints all assume segment 0.
+mov ss, ax                  ; (xor ax leaves DL — the boot drive — untouched)
 
-mov bp, 0x9000              ; setup stack 
-mov sp, bp 
+mov [BOOT_DRIVE], dl        ; BIOS stores our boot drive in DL
+
+mov bp, 0x9000              ; setup stack
+mov sp, bp
 
 mov bx, MSG_REAL_MODE
 call print_string           ; announce that 16-bit real mode boot 

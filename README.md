@@ -29,6 +29,10 @@ The current milestone is the first real driver: a VGA text-mode screen driver
 (`drivers/screen.c`) with cursor control, scrolling, and newline handling, built
 on a port-I/O helper (`drivers/low_level.c`).
 
+YozOs also **boots on real x86 hardware** — write the image to a USB stick with
+`make usb` and boot any PC that still supports Legacy BIOS / CSM. See
+[Booting on real hardware](#booting-on-real-hardware).
+
 ## Boot flow
 
 ```
@@ -63,7 +67,7 @@ assembled into one flat 512-byte binary.
 
 | File                  | Role                                                                                   |
 | --------------------- | -------------------------------------------------------------------------------------- |
-| `boot_sect.asm`       | Entry: stack setup, real-mode banner, `load_kernel`, `switch_to_pm`, `call` into kernel |
+| `boot_sect.asm`       | Entry: zero segment regs, stack setup, real-mode banner, `load_kernel`, `switch_to_pm`, `call` into kernel |
 | `disk_load.asm`       | `disk_load` — read `DH` sectors into `ES:BX` from drive `DL` (`int 0x13`), error check  |
 | `gdt.asm`             | Flat Global Descriptor Table (null / code / data) + `gdt_descriptor`, `CODE_SEG`/`DATA_SEG` |
 | `pm_switch.asm`       | `switch_to_pm` — `cli`, `lgdt`, set `cr0.PE`, far-jump, reload segment registers        |
@@ -110,6 +114,7 @@ Everything is driven by the `Makefile`.
 make            # build the bootable disk image (os-image.bin)
 make run        # build the image and boot it in QEMU
 make run-boot   # boot only the boot sector (no kernel)
+make usb        # flash the image to a USB stick (boot real hardware)
 make clean      # remove all build artifacts
 ```
 
@@ -131,6 +136,37 @@ make basic      # build the basic.c scratch -> basic.bin + basic.dis
 The boot sector reads the 15 sectors *after* itself, so the image is zero-padded
 to 16 sectors. An image that is too small makes the BIOS disk read fail and trips
 `disk_error`.
+
+## Booting on real hardware
+
+`make usb` writes `os-image.bin` to a USB stick so you can boot a physical PC,
+not just QEMU:
+
+```bash
+make usb                  # auto-detects the plugged-in external disk
+make usb DISK=/dev/disk4   # or name the disk explicitly
+```
+
+It auto-detects the first external physical disk, shows a `y/N` prompt, then
+unmounts → `dd`s the raw image → ejects (`sudo` prompts for your password).
+
+> ⚠️ This **erases** the target disk. With more than one USB plugged in, pass
+> `DISK=` explicitly. It must be the **whole disk** (`/dev/diskN`), never a
+> partition (`/dev/diskNsM`) — otherwise sector 0 won't be the boot sector.
+
+On the target machine's firmware:
+
+- Enable **Legacy Boot / CSM** (the boot sector is legacy-BIOS MBR; UEFI-only
+  machines with no CSM can't run it).
+- Disable **Secure Boot**.
+- Put the USB first in the boot order, or use the one-time boot menu.
+
+Writing the raw image to the whole disk overwrites sector 0, so the stick boots
+"superfloppy" style (no partition table) and the kernel lives in the first track.
+The one prerequisite that makes this work on real hardware is that the boot
+sector **zeroes `DS`/`ES`/`SS` at entry** — a real BIOS, unlike QEMU, doesn't
+guarantee those are 0, and the disk read (`int 0x13`) loads into `ES:BX`. Without
+it the read lands at a bogus address and trips `disk_error`.
 
 ## Disassembly
 
@@ -162,5 +198,5 @@ qemu-system-i386 -drive format=raw,file=os-image.bin -d int,cpu
 | Boot         | Legacy BIOS           |
 | Assembler    | NASM                  |
 | Compiler     | `i686-elf-gcc`        |
-| Emulator     | QEMU                  |
+| Runs on      | QEMU + real x86 PCs (Legacy BIOS / CSM, booted from USB) |
 | Host         | macOS (Apple Silicon) |

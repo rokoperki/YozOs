@@ -99,8 +99,31 @@ run: $(OS_IMAGE)
 run-boot: $(BOOT_BIN)
 	$(QEMU) -drive format=raw,file=$(BOOT_BIN),index=0,if=floppy
 
+# --- Flash to USB -----------------------------------------------------------
+# Write the bootable image to a physical USB stick, then boot a real PC from it
+# (Legacy/CSM enabled, Secure Boot off).
+#
+#   make usb               # auto-detects the plugged-in external disk
+#   make usb DISK=/dev/disk4   # or name it explicitly
+#
+# DISK auto-detects the first external physical disk; override on the command
+# line if you have more than one plugged in. It must be the WHOLE disk
+# (/dev/diskN), never a partition (/dev/diskNsM), or sector 0 won't be the boot
+# sector. This ERASES the target disk (a y/N prompt guards it first). dd writes
+# to the raw device (/dev/rdiskN) for speed; sudo will prompt for your password.
+DISK    ?= $(shell diskutil list external physical 2>/dev/null | awk '/^\/dev\/disk/{print $$1; exit}')
+USB_RAW  = $(patsubst /dev/disk%,/dev/rdisk%,$(DISK))
+
+usb: $(OS_IMAGE)
+	@test -n "$(DISK)" || { echo "No external USB found. Plug one in, or pass DISK=/dev/diskN."; exit 1; }
+	@printf ">>> ERASE %s and write $(OS_IMAGE)? [y/N] " "$(DISK)"; \
+	  read ans; [ "$$ans" = y ] || [ "$$ans" = Y ] || { echo "aborted."; exit 1; }
+	diskutil unmountDisk $(DISK)
+	sudo dd if=$(OS_IMAGE) of=$(USB_RAW) bs=512
+	diskutil eject $(DISK)
+
 # --- Phony ------------------------------------------------------------------
-.PHONY: all boot basic kernel image run run-boot disasm-boot disasm-basic disasm-kernel clean
+.PHONY: all boot basic kernel image run run-boot usb disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 boot: $(BOOT_BIN)
 basic: basic.bin basic.dis
