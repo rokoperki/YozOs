@@ -1,0 +1,22 @@
+
+basic.o:     file format elf32-i386
+
+
+Disassembly of section .text:
+
+00000000 <callee_function>:
+   0:	55                   	push   ebp
+   1:	89 e5                	mov    ebp,esp
+   3:	8b 45 08             	mov    eax,DWORD PTR [ebp+0x8]
+   6:	5d                   	pop    ebp
+   7:	c3                   	ret
+
+00000008 <caller_function>:
+   8:	55                   	push   ebp
+   9:	89 e5                	mov    ebp,esp
+   b:	68 de de 00 00       	push   0xdede
+  10:	e8 fc ff ff ff       	call   11 <caller_function+0x9>
+  15:	83 c4 04             	add    esp,0x4
+  18:	90                   	nop
+  19:	c9                   	leave
+  1a:	c3                   	ret
