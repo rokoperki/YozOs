@@ -6,7 +6,7 @@
 #define MAX_COLS 80
 
 // Attribute byte for our default colour scheme.
-#define WHITE_ON_BLACK 0x1f
+#define WHITE_ON_BLACK 0x0f
 
 // Screen device I/O ports.
 #define REG_SCREEN_CTRL 0x3D4

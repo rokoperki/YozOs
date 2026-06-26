@@ -1,3 +1,4 @@
+#include "cpu/isr.h"
 #include "drivers/screen.h"
 
 int main() {
@@ -15,14 +16,21 @@ int main() {
   print("    $$/      $$$$$$/  $$$$$$$$/  $$$$$$/   $$$$$$/    \n");
   print("\n");
   print("  ======================================================= \n");
-  print("             a hobby x86 OS from scratch   \n");
+  print("                   <3\n");
   print("  ======================================================= \n");
   print("\n");
   print("   [ ok ] boot sector\n");
   print("   [ ok ] protected mode\n");
   print("   [ ok ] screen driver online\n");
   print("\n");
-  print("   YozOs> _\n");
+
+  isr_install();
+  /* Test the interrupts */
+  __asm__ __volatile__("int $2");
+  __asm__ __volatile__("int $9");
+  __asm__ __volatile__("int $15");
+  __asm__ __volatile__("int $22");
+  __asm__ __volatile__("int $28");
 
   return 0;
 }

@@ -1,0 +1,30 @@
+# asm-lsp configuration for YozOs.
+#
+# Two assembly "projects" with DIFFERENT output formats — asm-lsp invokes nasm
+# to produce diagnostics, and the format flag decides what's legal:
+#
+#   boot/  -> flat `bin`: 16-bit boot code using [org 0x7c00] and %include.
+#             (`org` is invalid in elf format.)
+#   cpu/   -> `elf`: 32-bit ISR stubs using `extern isr_handler` and
+#             `global isrN`. (external references are invalid in bin format —
+#             assembling these as bin is what floods interupt.asm with errors.)
+
+[[project]]
+path = "boot"
+version = "0.10.1"
+assembler = "nasm"
+instruction_set = "x86/x86-64"
+
+[project.opts]
+compiler = "nasm"
+compile_flags_txt = ["-f", "bin", "-I", "/Users/jozo/YozOs/boot/"]
+
+[[project]]
+path = "cpu"
+version = "0.10.1"
+assembler = "nasm"
+instruction_set = "x86/x86-64"
+
+[project.opts]
+compiler = "nasm"
+compile_flags_txt = ["-f", "elf", "-I", "/Users/jozo/YozOs/"]

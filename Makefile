@@ -1,5 +1,9 @@
 # YozOs build — "Writing a Simple OS from Scratch" style toolchain (macOS / i686-elf-*)
 
+# Build the full bootable image by default (so plain `make` == `make all`),
+# regardless of which rule happens to appear first in this file.
+.DEFAULT_GOAL := all
+
 # --- Toolchain --------------------------------------------------------------
 CC      := i686-elf-gcc
 LD      := i686-elf-ld
@@ -53,10 +57,17 @@ disasm-boot: $(BOOT_BIN)
 # Linked to run at 0x1000 — the address the boot sector loads it to and jumps.
 #
 # Kernel C sources: top-level kernel + every driver (port I/O lives in
-# drivers/low_level.c). basic.c is standalone scratch and is deliberately NOT in
-# this list, so it never gets linked into the kernel.
-C_SOURCES := kernel.c $(wildcard drivers/*.c)
+# drivers/low_level.c) + the CPU layer (IDT/ISRs in cpu/) + kernel helpers
+# (kernel/util.c). basic.c is standalone scratch and is deliberately NOT in this
+# list, so it never gets linked into the kernel.
+C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
+
+# Standalone assembly that gets linked into the kernel (NOT %include'd into the
+# flat boot sector). cpu/interupt.asm holds the ISR stubs and references
+# `extern isr_handler`, so it must be an ELF object the linker can resolve.
+ASM_SOURCES := $(wildcard cpu/*.asm)
+ASM_OBJ     := $(ASM_SOURCES:.asm=.o)
 
 # Generic rule for any kernel C source. -I. lets drivers/*.c include top-level
 # headers such as low_level.h. The i686-elf cross-compiler is required: the
@@ -69,9 +80,14 @@ OBJ       := $(C_SOURCES:.c=.o)
 kernel_entry.o: boot/kernel_entry.asm
 	$(ASM) $< -f elf -o $@
 
+# Generic rule for standalone kernel assembly (cpu/interupt.asm). ELF objects,
+# like kernel_entry.o, so the linker can resolve cross-references.
+%.o: %.asm
+	$(ASM) $< -f elf -o $@
+
 # kernel_entry.o MUST come first so the byte at 0x1000 is the stub (which calls
 # main), not whatever function gcc happened to place first in kernel.o.
-kernel.bin: kernel_entry.o $(OBJ)
+kernel.bin: kernel_entry.o $(OBJ) $(ASM_OBJ)
 	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ $^
 
 # Raw flat kernel (no ELF header — tell objdump the arch explicitly). 32-bit,
@@ -132,4 +148,4 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      kernel_entry.o kernel.bin $(OBJ) $(OS_IMAGE)
+	      kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) $(OS_IMAGE)

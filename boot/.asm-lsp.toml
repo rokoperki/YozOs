@@ -1,9 +1,0 @@
-[[project]]
-path = ""
-version = "0.10.1"
-assembler = "nasm"
-instruction_set = "x86/x86-64"
-
-[project.opts]
-compiler = "nasm"
-compile_flags_txt = ["-I", "/Users/jozo/YozOs/boot/"]
