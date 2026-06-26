@@ -29,8 +29,6 @@ int main() {
   __asm__ __volatile__("int $2");
   __asm__ __volatile__("int $9");
   __asm__ __volatile__("int $15");
-  __asm__ __volatile__("int $22");
-  __asm__ __volatile__("int $28");
 
   return 0;
 }
