@@ -12,7 +12,10 @@ kernel drives the screen through a C driver and installs an **IDT** handling the
 32 CPU exceptions. **Hardware interrupts** are live: the PIC is remapped, IRQ
 stubs are installed, and the dispatcher sends EOIs and routes to registered
 handlers. Currently wiring up a first **keyboard** handler (IRQ1, scancode
-decode). Next stop is a keyboard-driven shell.
+decode). A **PIT timer** driver is in the tree (`cpu/timer.c`): it programs
+channel 0 in mode 3 (square-wave) at a caller-chosen frequency and counts ticks
+in an IRQ0 handler — call `init_timer(freq)` from the kernel to start it. Next
+stop is a keyboard-driven shell.
 
 ## Boot flow
 
