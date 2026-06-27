@@ -1,5 +1,11 @@
 #include "cpu/isr.h"
+#include "drivers/low_level.h" /* or wherever port_byte_in lives */
 #include "drivers/screen.h"
+
+void test_kbd(registers_t r) {
+  u8 sc = port_byte_in(0x60); /* drain the buffer so IRQ1 can fire again */
+  print("key!\n");
+}
 
 int main() {
   clear_screen();
@@ -30,5 +36,7 @@ int main() {
   __asm__ __volatile__("int $9");
   __asm__ __volatile__("int $15");
 
+  register_interrupt_handler(IRQ1, test_kbd);
+  __asm__ __volatile__("sti");
   return 0;
 }

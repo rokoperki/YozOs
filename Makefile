@@ -1,7 +1,5 @@
 # YozOs build — "Writing a Simple OS from Scratch" style toolchain (macOS / i686-elf-*)
 
-# Build the full bootable image by default (so plain `make` == `make all`),
-# regardless of which rule happens to appear first in this file.
 .DEFAULT_GOAL := all
 
 # --- Toolchain --------------------------------------------------------------
@@ -12,8 +10,7 @@ OBJCOPY := i686-elf-objcopy
 ASM     := nasm
 QEMU    := qemu-system-i386
 
-# Freestanding kernel code (no host libc / startup files). The i686-elf
-# toolchain is natively 32-bit, so -m32 / -m elf_i386 are not needed.
+# Freestanding kernel code (no host libc / startup files).
 CFLAGS  := -ffreestanding -fno-pie -Wall -Wextra
 LDFLAGS :=
 
@@ -30,75 +27,55 @@ $(BOOT_BIN): $(BOOT_DEPS)
 basic.o: basic.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Linked ELF: addresses resolved, sections/symbols intact. Best for reading.
 basic.elf: basic.o
 	$(LD) $(LDFLAGS) -Ttext 0x0 -o $@ $<
 
-# Flat binary, carved out of the ELF.
 basic.bin: basic.elf
 	$(OBJCOPY) -O binary $< $@
 
 # --- Disassembly helpers ----------------------------------------------------
-# Default view: linked code, real addresses, CODE ONLY (data left alone).
 basic.dis: basic.elf
 	$(OBJDUMP) -d -Mintel $< > $@
 
-# Full view: code AND data, with strings shown as a hex+ASCII dump (no garbage).
 disasm-basic: basic.elf
 	$(OBJDUMP) -d -Mintel $<
 	@echo '--- .rodata (string data) ---'
 	$(OBJDUMP) -s -j .rodata $<
 
-# Raw flat boot sector (no ELF header — tell objdump the arch explicitly).
 disasm-boot: $(BOOT_BIN)
 	$(OBJDUMP) -D -b binary -mi386 -Mintel,addr16,data16 $(BOOT_BIN)
 
 # --- Kernel -----------------------------------------------------------------
-# Linked to run at 0x1000 — the address the boot sector loads it to and jumps.
-#
-# Kernel C sources: top-level kernel + every driver (port I/O lives in
-# drivers/low_level.c) + the CPU layer (IDT/ISRs in cpu/) + kernel helpers
-# (kernel/util.c). basic.c is standalone scratch and is deliberately NOT in this
-# list, so it never gets linked into the kernel.
+# Linked to run at 0x1000, the address the boot sector loads it to and jumps.
+# basic.c is standalone scratch and is deliberately NOT in this list.
 C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
 
-# Standalone assembly that gets linked into the kernel (NOT %include'd into the
-# flat boot sector). cpu/interupt.asm holds the ISR stubs and references
-# `extern isr_handler`, so it must be an ELF object the linker can resolve.
+# Standalone assembly linked into the kernel (NOT %include'd into the boot
+# sector). cpu/interupt.asm references `extern isr_handler`, so it must be ELF.
 ASM_SOURCES := $(wildcard cpu/*.asm)
 ASM_OBJ     := $(ASM_SOURCES:.asm=.o)
 
-# Generic rule for any kernel C source. -I. lets drivers/*.c include top-level
-# headers such as low_level.h. The i686-elf cross-compiler is required: the
-# "a"/"d" register constraints in low_level.c are x86-only and fail under host
-# clang (arm64).
+# -I. lets drivers/*.c include top-level headers such as low_level.h.
 %.o: %.c
 	$(CC) $(CFLAGS) -I. -c $< -o $@
 
-# Entry stub — assembled as an ELF object so the linker can resolve `extern main`.
 kernel_entry.o: boot/kernel_entry.asm
 	$(ASM) $< -f elf -o $@
 
-# Generic rule for standalone kernel assembly (cpu/interupt.asm). ELF objects,
-# like kernel_entry.o, so the linker can resolve cross-references.
 %.o: %.asm
 	$(ASM) $< -f elf -o $@
 
-# kernel_entry.o MUST come first so the byte at 0x1000 is the stub (which calls
-# main), not whatever function gcc happened to place first in kernel.o.
+# kernel_entry.o MUST come first so the byte at 0x1000 is the stub (calls main).
 kernel.bin: kernel_entry.o $(OBJ) $(ASM_OBJ)
 	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ $^
 
-# Raw flat kernel (no ELF header — tell objdump the arch explicitly). 32-bit,
-# so no addr16/data16 (unlike the 16-bit boot sector).
 disasm-kernel: kernel.bin
 	$(OBJDUMP) -D -b binary -m i386 -Mintel kernel.bin
 
 # --- OS image (bootable disk) -----------------------------------------------
-# Disk layout: sector 0 = boot sector, sector 1+ = kernel. The boot sector
-# reads 15 sectors after itself, so pad the image to 16 sectors (8 KiB) — a
-# too-small image makes the BIOS disk read fail (disk_error).
+# Disk layout: sector 0 = boot sector, sector 1+ = kernel. Pad to 16 sectors
+# (8 KiB); a too-small image makes the BIOS disk read fail (disk_error).
 OS_IMAGE := os-image.bin
 
 $(OS_IMAGE): $(BOOT_BIN) kernel.bin
@@ -107,26 +84,17 @@ $(OS_IMAGE): $(BOOT_BIN) kernel.bin
 	dd if=kernel.bin  of=$@ bs=512 seek=1 conv=notrunc 2>/dev/null
 
 # --- Run --------------------------------------------------------------------
-# Boot the full OS image (boot sector + kernel) in QEMU.
 run: $(OS_IMAGE)
 	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy
 
-# Boot only the boot sector (no kernel).
 run-boot: $(BOOT_BIN)
 	$(QEMU) -drive format=raw,file=$(BOOT_BIN),index=0,if=floppy
 
 # --- Flash to USB -----------------------------------------------------------
-# Write the bootable image to a physical USB stick, then boot a real PC from it
-# (Legacy/CSM enabled, Secure Boot off).
-#
-#   make usb               # auto-detects the plugged-in external disk
-#   make usb DISK=/dev/disk4   # or name it explicitly
-#
+# Write the bootable image to a physical USB stick (Legacy/CSM, Secure Boot off).
 # DISK auto-detects the first external physical disk; override on the command
-# line if you have more than one plugged in. It must be the WHOLE disk
-# (/dev/diskN), never a partition (/dev/diskNsM), or sector 0 won't be the boot
-# sector. This ERASES the target disk (a y/N prompt guards it first). dd writes
-# to the raw device (/dev/rdiskN) for speed; sudo will prompt for your password.
+# line if you have more than one. Must be the WHOLE disk (/dev/diskN), never a
+# partition. This ERASES the target disk (a y/N prompt guards it first).
 DISK    ?= $(shell diskutil list external physical 2>/dev/null | awk '/^\/dev\/disk/{print $$1; exit}')
 USB_RAW  = $(patsubst /dev/disk%,/dev/rdisk%,$(DISK))
 
@@ -141,6 +109,8 @@ usb: $(OS_IMAGE)
 # --- Phony ------------------------------------------------------------------
 .PHONY: all boot basic kernel image run run-boot usb disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
+	@printf ">>> %s built: %s bytes (%s KiB)\n" "$(OS_IMAGE)" \
+	  "$$(stat -f%z $(OS_IMAGE))" "$$(( $$(stat -f%z $(OS_IMAGE)) / 1024 ))"
 boot: $(BOOT_BIN)
 basic: basic.bin basic.dis
 kernel: kernel.bin

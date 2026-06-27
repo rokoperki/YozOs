@@ -34,7 +34,7 @@ load_kernel:
   call print_string
 
   mov bx, KERNEL_OFFSET       ; set params of disk_load so that we load first 15 sectors 
-  mov dh, 15                  ; excluding boot, from boot disk to address KERNEL_OFFSET
+  mov dh, 31                  ; excluding boot, from boot disk to address KERNEL_OFFSET
   mov dl, [BOOT_DRIVE]
   call disk_load
 
