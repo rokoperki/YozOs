@@ -1,5 +1,6 @@
 #include "cpu/isr.h"
 #include "cpu/timer.h"
+#include "drivers/keyboard.h"
 #include "drivers/low_level.h" /* or wherever port_byte_in lives */
 #include "drivers/screen.h"
 
@@ -38,7 +39,7 @@ int main() {
   __asm__ __volatile__("int $15");
 
   register_interrupt_handler(IRQ1, test_kbd);
-  init_timer(50);
+  init_keyboard();
   __asm__ __volatile__("sti");
   return 0;
 }

@@ -90,7 +90,7 @@ int handle_scrolling(int offset) {
 }
 
 /* Print a string from (col, row); pass (-1, -1) to start at the cursor. */
-void print_at(char *message, int col, int row) {
+void print_at(const char *message, int col, int row) {
   if (col >= 0 && row >= 0) {
     set_cursor(get_screen_offset(col, row));
   }
@@ -102,7 +102,7 @@ void print_at(char *message, int col, int row) {
 }
 
 /* Convenience wrapper: print at the current cursor position. */
-void print(char *message) { print_at(message, -1, -1); }
+void print(const char *message) { print_at(message, -1, -1); }
 
 /* Tidy the screen by writing blank characters at every position. */
 void clear_screen() {

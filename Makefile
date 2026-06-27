@@ -103,7 +103,7 @@ usb: $(OS_IMAGE)
 	@printf ">>> ERASE %s and write $(OS_IMAGE)? [y/N] " "$(DISK)"; \
 	  read ans; [ "$$ans" = y ] || [ "$$ans" = Y ] || { echo "aborted."; exit 1; }
 	diskutil unmountDisk $(DISK)
-	sudo dd if=$(OS_IMAGE) of=$(USB_RAW) bs=512
+	sudo dd if=$(OS_IMAGE) of=$(USB_RAW) bs=512 conv=sync
 	diskutil eject $(DISK)
 
 # --- Phony ------------------------------------------------------------------

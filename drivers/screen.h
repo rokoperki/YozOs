@@ -13,8 +13,8 @@
 #define REG_SCREEN_DATA 0x3D5
 
 // Public interface.
-void print_at(char *message, int col, int row);
-void print(char *message);
+void print_at(const char *message, int col, int row);
+void print(const char *message);
 void clear_screen();
 
 // Internal helpers (used across the driver).

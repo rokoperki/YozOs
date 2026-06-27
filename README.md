@@ -9,8 +9,10 @@ cross-compiler; runs in QEMU and on real Legacy-BIOS hardware.
 
 Boot pipeline is complete: boot sector → GDT → protected mode → C kernel. The
 kernel drives the screen through a C driver and installs an **IDT** handling the
-32 CPU exceptions. Currently wiring up **hardware interrupts** (PIC remap, IRQs)
-and a first keyboard handler. Next stop is a keyboard + shell.
+32 CPU exceptions. **Hardware interrupts** are live: the PIC is remapped, IRQ
+stubs are installed, and the dispatcher sends EOIs and routes to registered
+handlers. Currently wiring up a first **keyboard** handler (IRQ1, scancode
+decode). Next stop is a keyboard-driven shell.
 
 ## Boot flow
 
@@ -21,7 +23,8 @@ BIOS ─► boot_sect.asm @ 0x7c00   [16-bit real mode]
         reload segments, call kernel @ 0x1000
    ─► main() in kernel.c          [32-bit protected mode]
         clear_screen / print via screen driver
-        isr_install() ─► build + lidt the IDT
+        isr_install() ─► set ISR/IRQ gates, remap PIC, lidt the IDT
+        init_keyboard() ─► register IRQ1 handler; sti
 ```
 
 ## Layout
@@ -30,8 +33,8 @@ BIOS ─► boot_sect.asm @ 0x7c00   [16-bit real mode]
 | ------------ | ----------------------------------------------------------------- |
 | `boot/`      | 512-byte boot sector; `boot_sect.asm` `%include`s the other `.asm` |
 | `kernel.c`   | 32-bit C kernel `main()`, linked at `0x1000`                       |
-| `cpu/`       | IDT, ISR stubs (`interupt.asm`), C interrupt dispatcher (`isr.c`)  |
-| `drivers/`   | VGA text-mode screen driver + port I/O primitives                 |
+| `cpu/`       | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`), `timer.c` |
+| `drivers/`   | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler) |
 | `kernel/`    | Freestanding helpers (`memory_copy`, `int_to_ascii`, …)           |
 | `basic.c`    | Standalone C scratch for studying disassembly (not booted)        |
 
