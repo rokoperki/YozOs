@@ -117,3 +117,17 @@ void clear_screen() {
 
   set_cursor(get_screen_offset(0, 0));
 }
+
+int get_offset_row(int offset) { return offset / (2 * MAX_COLS); }
+int get_offset_col(int offset) {
+  return (offset - (get_offset_row(offset) * 2 * MAX_COLS)) / 2;
+}
+
+void print_backspace() {
+  int offset = get_cursor() - 2;
+  int row = get_offset_row(offset);
+  int col = get_offset_col(offset);
+
+  print_char(' ', col, row, WHITE_ON_BLACK);
+  set_cursor(get_screen_offset(col, row));
+}

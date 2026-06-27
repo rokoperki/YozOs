@@ -8,14 +8,17 @@ cross-compiler; runs in QEMU and on real Legacy-BIOS hardware.
 ## Status
 
 Boot pipeline is complete: boot sector → GDT → protected mode → C kernel. The
-kernel drives the screen through a C driver and installs an **IDT** handling the
-32 CPU exceptions. **Hardware interrupts** are live: the PIC is remapped, IRQ
-stubs are installed, and the dispatcher sends EOIs and routes to registered
-handlers. Currently wiring up a first **keyboard** handler (IRQ1, scancode
-decode). A **PIT timer** driver is in the tree (`cpu/timer.c`): it programs
-channel 0 in mode 3 (square-wave) at a caller-chosen frequency and counts ticks
-in an IRQ0 handler — call `init_timer(freq)` from the kernel to start it. Next
-stop is a keyboard-driven shell.
+kernel prints an ASCII banner, drives the screen through a C driver, and installs
+an **IDT** handling the 32 CPU exceptions. **Hardware interrupts** are live: the
+PIC is remapped, IRQ stubs are installed, and the dispatcher sends EOIs and routes
+to registered handlers. The **keyboard** driver (IRQ1) works: it decodes
+scancodes to ASCII, maintains a 256-byte line buffer with backspace/enter
+editing, and echoes keystrokes to the screen. On Enter it hands the line to a
+minimal **shell** — a `yozOS >` prompt that dispatches the buffered command
+(currently `END`, which halts the CPU). A **PIT timer** driver (`cpu/timer.c`)
+programs channel 0 in mode 3 (square-wave) at a caller-chosen frequency and
+counts ticks in an IRQ0 handler; `init_timer(50)` starts it at boot. Next stop
+is memory management (paging) — see `ROADMAP.md`.
 
 ## Boot flow
 
@@ -25,9 +28,11 @@ BIOS ─► boot_sect.asm @ 0x7c00   [16-bit real mode]
         lgdt, set cr0.PE, far-jump ─► protected mode
         reload segments, call kernel @ 0x1000
    ─► main() in kernel.c          [32-bit protected mode]
-        clear_screen / print via screen driver
-        isr_install() ─► set ISR/IRQ gates, remap PIC, lidt the IDT
-        init_keyboard() ─► register IRQ1 handler; sti
+        clear_screen / print banner via screen driver
+        isr_install()   ─► set ISR/IRQ gates, remap PIC, lidt the IDT
+        init_keyboard() ─► register IRQ1 handler
+        init_timer(50)  ─► program PIT channel 0, register IRQ0 handler
+        sti ─► interrupts on; keystrokes feed the yozOS > shell
 ```
 
 ## Layout
@@ -36,9 +41,10 @@ BIOS ─► boot_sect.asm @ 0x7c00   [16-bit real mode]
 | ------------ | ----------------------------------------------------------------- |
 | `boot/`      | 512-byte boot sector; `boot_sect.asm` `%include`s the other `.asm` |
 | `kernel.c`   | 32-bit C kernel `main()`, linked at `0x1000`                       |
+| `kernel.c`   | also hosts the shell dispatcher (`user_input`)                     |
 | `cpu/`       | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`), `timer.c` |
 | `drivers/`   | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler) |
-| `kernel/`    | Freestanding helpers (`memory_copy`, `int_to_ascii`, …)           |
+| `kernel/`    | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `basic.c`    | Standalone C scratch for studying disassembly (not booted)        |
 
 ## Toolchain

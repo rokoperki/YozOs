@@ -1,13 +1,8 @@
 #include "cpu/isr.h"
 #include "cpu/timer.h"
 #include "drivers/keyboard.h"
-#include "drivers/low_level.h" /* or wherever port_byte_in lives */
 #include "drivers/screen.h"
-
-void test_kbd(registers_t r) {
-  u8 sc = port_byte_in(0x60); /* drain the buffer so IRQ1 can fire again */
-  print("key!\n");
-}
+#include "kernel/string.h"
 
 int main() {
   clear_screen();
@@ -33,13 +28,18 @@ int main() {
   print("\n");
 
   isr_install();
-  /* Test the interrupts */
-  __asm__ __volatile__("int $2");
-  __asm__ __volatile__("int $9");
-  __asm__ __volatile__("int $15");
 
-  register_interrupt_handler(IRQ1, test_kbd);
+  print("yozOS > ");
   init_keyboard();
+  init_timer(50);
+
   __asm__ __volatile__("sti");
   return 0;
+}
+
+void user_input(char *input) {
+  if (strcmp(input, "END") == 0) {
+    print("Stopping the CPU. Bye!\n");
+    asm volatile("hlt");
+  }
 }
