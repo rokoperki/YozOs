@@ -1,4 +1,5 @@
 #include "cpu/isr.h"
+#include "cpu/memory_map.h"
 #include "cpu/timer.h"
 #include "drivers/keyboard.h"
 #include "drivers/screen.h"
@@ -19,7 +20,6 @@ int main() {
   print("    $$/      $$$$$$/  $$$$$$$$/  $$$$$$/   $$$$$$/    \n");
   print("\n");
   print("  ======================================================= \n");
-  print("                   <3\n");
   print("  ======================================================= \n");
   print("\n");
   print("   [ ok ] boot sector\n");
@@ -41,5 +41,7 @@ void user_input(char *input) {
   if (strcmp(input, "END") == 0) {
     print("Stopping the CPU. Bye!\n");
     asm volatile("hlt");
+  } else if (strcmp(input, "MMAP") == 0) {
+    memory_map_print();
   }
 }

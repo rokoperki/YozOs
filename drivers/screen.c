@@ -104,6 +104,12 @@ void print_at(const char *message, int col, int row) {
 /* Convenience wrapper: print at the current cursor position. */
 void print(const char *message) { print_at(message, -1, -1); }
 
+/*Print with new line*/
+void println(const char *message) {
+  print(message);
+  print("\n");
+}
+
 /* Tidy the screen by writing blank characters at every position. */
 void clear_screen() {
   int row = 0;

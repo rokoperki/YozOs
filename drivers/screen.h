@@ -15,6 +15,7 @@
 // Public interface.
 void print_at(const char *message, int col, int row);
 void print(const char *message);
+void println(const char *message);
 void clear_screen();
 
 // Internal helpers (used across the driver).

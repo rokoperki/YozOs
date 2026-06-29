@@ -16,11 +16,12 @@ mov bx, MSG_REAL_MODE
 call print_string           ; announce that 16-bit real mode boot 
 
 call load_kernel
-
+call do_e820
 call switch_to_pm
 
 jmp $ 
 
+%include "memory_map.asm"
 %include "print_string.asm"
 %include "disk_load.asm"
 %include "gdt.asm"

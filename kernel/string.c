@@ -51,3 +51,13 @@ int strcmp(char s1[], char s2[]) {
   }
   return s1[i] - s2[i];
 }
+
+void hex_to_ascii(u32 n, char s[]) {
+  for (int i = 0; i < 8; i++) {
+    int shift = 28 - i * 4;
+    int nibble = (n >> shift) & 0xF;
+    char hex[] = "0123456789ABCDEF";
+    s[i] = hex[nibble];
+  }
+  s[8] = '\0';
+}
