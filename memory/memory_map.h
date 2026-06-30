@@ -1,7 +1,7 @@
 #ifndef MEMORY
 #define MEMORY
 
-#include "types.h"
+#include "../cpu/types.h"
 
 typedef struct {
   u64 base;
@@ -12,6 +12,8 @@ typedef struct {
 
 #define MMAP_ENT_NUM 0x8000
 #define MMAP_ENT_START 0x8004
+
+void print_u64(u64 number, char buf[]);
 
 typedef enum {
   USABLE = 1,

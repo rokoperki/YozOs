@@ -48,7 +48,7 @@ disasm-boot: $(BOOT_BIN)
 # --- Kernel -----------------------------------------------------------------
 # Linked to run at 0x1000, the address the boot sector loads it to and jumps.
 # basic.c is standalone scratch and is deliberately NOT in this list.
-C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c)
+C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
 
 # Standalone assembly linked into the kernel (NOT %include'd into the boot
