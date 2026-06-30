@@ -2,6 +2,8 @@
 #include "../drivers/low_level.h"
 #include "../drivers/screen.h"
 #include "../kernel/string.h"
+#include "../memory/memory_map.h"
+#include "../memory/paging.h"
 #include "idt.h"
 
 isr_t interrupt_handlers[256];
@@ -110,6 +112,14 @@ char *exception_messages[] = {"Division By Zero",
                               "Reserved"};
 
 void isr_handler(registers_t r) {
+  if (r.int_no == 14) {
+    print("Page fault addr: ");
+    char buf[50];
+    print_u64(read_cr2(), buf);
+    println("");
+    asm volatile("cli; hlt"); // stop here so we don't loop on the faulting instr
+  }
+
   print("received interrupt: ");
   char s[3];
   int_to_ascii(r.int_no, s);

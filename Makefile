@@ -53,7 +53,7 @@ OBJ       := $(C_SOURCES:.c=.o)
 
 # Standalone assembly linked into the kernel (NOT %include'd into the boot
 # sector). cpu/interupt.asm references `extern isr_handler`, so it must be ELF.
-ASM_SOURCES := $(wildcard cpu/*.asm)
+ASM_SOURCES := $(wildcard cpu/*.asm) $(wildcard memory/*.asm)
 ASM_OBJ     := $(ASM_SOURCES:.asm=.o)
 
 # -I. lets drivers/*.c include top-level headers such as low_level.h.

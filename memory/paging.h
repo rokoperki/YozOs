@@ -1,0 +1,18 @@
+#ifndef PAGING
+#define PAGING
+
+#include "../cpu/types.h"
+#include "frame_alloc.h"
+
+#define PAGE_PRESENT 0x1
+#define PAGE_RW 0x2
+#define PAGE_USER 0x4
+#define PAGE_ADDR_MASK 0xFFFFF000
+#define PAGE_ENTRIES 1024
+
+void init_paging();
+void map_page(u32 virt, u32 phys, u32 flags);
+extern void load_page_directory(u32 *dir);
+extern void enable_paging(void);
+extern u32 read_cr2(void);
+#endif

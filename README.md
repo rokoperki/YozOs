@@ -7,45 +7,32 @@ cross-compiler; runs in QEMU and on real Legacy-BIOS hardware.
 
 ## Status
 
-Boot pipeline is complete: boot sector → GDT → protected mode → C kernel. The
-kernel prints an ASCII banner, drives the screen through a C driver, and installs
-an **IDT** handling the 32 CPU exceptions. **Hardware interrupts** are live: the
-PIC is remapped, IRQ stubs are installed, and the dispatcher sends EOIs and routes
-to registered handlers. The **keyboard** driver (IRQ1) works: it decodes
-scancodes to ASCII, maintains a 256-byte line buffer with backspace/enter
-editing, and echoes keystrokes to the screen. On Enter it hands the line to a
-minimal **shell** — a `yozOS >` prompt that dispatches the buffered command
-(currently `END`, which halts the CPU). A **PIT timer** driver (`cpu/timer.c`)
-programs channel 0 in mode 3 (square-wave) at a caller-chosen frequency and
-counts ticks in an IRQ0 handler; `init_timer(50)` starts it at boot. Next stop
-is memory management (paging) — see `ROADMAP.md`.
+Done so far:
 
-## Boot flow
+- **Boot → C kernel** — boot sector loads the kernel at `0x1000`, switches to
+  32-bit protected mode (GDT + `cr0.PE`), and calls `main()`.
+- **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
+  dispatcher (EOIs + registered handlers).
+- **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
+  `yozOS >` prompt dispatches commands: `END`, `MMAP`, `FALLOC`, `PTEST`.
+- **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
+- **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
+  the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
+  `CR2` address; `PTEST` proves the MMU is live.
 
-```
-BIOS ─► boot_sect.asm @ 0x7c00   [16-bit real mode]
-        set up stack, print banner, load kernel @ 0x1000 (int 0x13)
-        lgdt, set cr0.PE, far-jump ─► protected mode
-        reload segments, call kernel @ 0x1000
-   ─► main() in kernel.c          [32-bit protected mode]
-        clear_screen / print banner via screen driver
-        isr_install()   ─► set ISR/IRQ gates, remap PIC, lidt the IDT
-        init_keyboard() ─► register IRQ1 handler
-        init_timer(50)  ─► program PIT channel 0, register IRQ0 handler
-        sti ─► interrupts on; keystrokes feed the yozOS > shell
-```
+Next: multitasking.
 
 ## Layout
 
-| Path         | Role                                                              |
-| ------------ | ----------------------------------------------------------------- |
-| `boot/`      | 512-byte boot sector; `boot_sect.asm` `%include`s the other `.asm` |
-| `kernel.c`   | 32-bit C kernel `main()`, linked at `0x1000`                       |
-| `kernel.c`   | also hosts the shell dispatcher (`user_input`)                     |
-| `cpu/`       | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`), `timer.c` |
-| `drivers/`   | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler) |
-| `kernel/`    | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
-| `basic.c`    | Standalone C scratch for studying disassembly (not booted)        |
+| Path       | Role                                                                                                               |
+| ---------- | ------------------------------------------------------------------------------------------------------------------ |
+| `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
+| `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) + shell dispatcher (`user_input`)                                    |
+| `cpu/`     | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`, ISR 14 page fault), `timer.c`                            |
+| `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler)                                                  |
+| `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
+| `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
+| `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
 ## Toolchain
 
