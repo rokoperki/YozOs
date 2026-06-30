@@ -5,6 +5,7 @@
 #include "kernel/string.h"
 #include "memory/frame_alloc.h"
 #include "memory/memory_map.h"
+#include "memory/paging.h"
 
 int main() {
   clear_screen();
@@ -34,6 +35,8 @@ int main() {
   init_keyboard();
   init_timer(50);
 
+  init_frames();
+  init_paging();
   __asm__ __volatile__("sti");
   return 0;
 }
@@ -45,7 +48,6 @@ void user_input(char *input) {
   } else if (strcmp(input, "MMAP") == 0) {
     memory_map_print();
   } else if (strcmp(input, "FALLOC") == 0) {
-    init_frames();
     char buf[50];
     for (int i = 0; i < 4; i++) {
       u32 addr = alloc_frame();
@@ -55,5 +57,8 @@ void user_input(char *input) {
       }
       println("");
     }
+  } else if (strcmp(input, "PTEST") == 0) {
+    u32 *bad = (u32 *)0x800000; // 8 MiB — PDE[1], not present
+    u32 x = *bad;               // ← page fault fires here
   }
 }
