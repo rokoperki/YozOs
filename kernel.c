@@ -2,10 +2,12 @@
 #include "cpu/timer.h"
 #include "drivers/keyboard.h"
 #include "drivers/screen.h"
+#include "kernel/function.h"
 #include "kernel/string.h"
 #include "memory/frame_alloc.h"
 #include "memory/memory_map.h"
 #include "memory/paging.h"
+#include "task/task.h"
 
 int main() {
   clear_screen();
@@ -60,5 +62,8 @@ void user_input(char *input) {
   } else if (strcmp(input, "PTEST") == 0) {
     u32 *bad = (u32 *)0x800000; // 8 MiB — PDE[1], not present
     u32 x = *bad;               // ← page fault fires here
+    UNUSED(x);
+  } else if (strcmp(input, "TASKTEST") == 0) {
+    test_task();
   }
 }
