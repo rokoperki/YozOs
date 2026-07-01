@@ -10,14 +10,17 @@ static task_t task_a, task_b;
 void create_task(task_t *t, void (*entry)()) {
   u32 *stack = (u32 *)(alloc_frame() + FRAME_SIZE);
   *(--stack) = (u32)entry; // ret addr
-  *(--stack) = 0;          // ebp
-  *(--stack) = 0;          // ebx
-  *(--stack) = 0;          // esi
-  *(--stack) = 0;          // edi
+  *(--stack) = (u32)task_trampoline;
+  *(--stack) = 0; // ebp
+  *(--stack) = 0; // ebx
+  *(--stack) = 0; // esi
+  *(--stack) = 0; // edi
   t->esp = (u32)stack;
 }
 
-void yield() {
+void schedule() {
+  if (!current)
+    return;
   task_t *prev = current;
   current = current->next;
   switch_context(&prev->esp, current->esp);
@@ -26,14 +29,12 @@ void yield() {
 void thread_a() {
   while (1) {
     print("A");
-    yield();
   }
 }
 
 void thread_b() {
   while (1) {
     print("B");
-    yield();
   }
 }
 
@@ -46,5 +47,5 @@ void test_task() {
   task_b.next = &task_a;
 
   current = &main_task;
-  yield();
+  schedule();
 }

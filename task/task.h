@@ -11,8 +11,9 @@ typedef struct task {
 void create_task(task_t *t, void (*entry)());
 
 extern void switch_context(u32 *old_esp, u32 new_esp);
+extern void task_trampoline();
 
 void test_task();
-void yield();
+void schedule();
 
 #endif

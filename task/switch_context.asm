@@ -1,6 +1,11 @@
 [bits 32]
 
 global switch_context
+global task_trampoline
+
+task_trampoline:
+  sti 
+  ret
 
 switch_context:
   push ebp

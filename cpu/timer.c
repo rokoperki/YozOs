@@ -1,6 +1,7 @@
 #include "timer.h"
 #include "../drivers/low_level.h"
 #include "../kernel/function.h"
+#include "../task/task.h"
 #include "isr.h"
 #include "types.h"
 
@@ -8,6 +9,8 @@ u32 tick = 0;
 
 static void timer_callback(registers_t regs) {
   tick++;
+  if (tick % 10 == 0)
+    schedule();
   UNUSED(regs);
 }
 
