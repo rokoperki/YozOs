@@ -14,13 +14,16 @@ Done so far:
 - **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
   dispatcher (EOIs + registered handlers).
 - **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
-  `yozOS >` prompt dispatches commands: `END`, `MMAP`, `FALLOC`, `PTEST`.
+  `yozOS >` prompt dispatches commands: `END`, `MMAP`, `FALLOC`, `PTEST`,
+  `TASKTEST`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
   `CR2` address; `PTEST` proves the MMU is live.
+- **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
+  switching driven off the timer IRQ (`TASKTEST`).
 
-Next: multitasking.
+Next: filesystem (Stage 5) — ATA PIO disk driver + FAT.
 
 ## Layout
 
@@ -32,6 +35,7 @@ Next: multitasking.
 | `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler)                                                  |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
+| `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
 ## Toolchain
