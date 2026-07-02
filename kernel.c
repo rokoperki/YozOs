@@ -103,5 +103,7 @@ void user_input(char *input) {
     fs_info();
   } else if (strcmp(input, "LS") == 0) {
     fs_ls();
+  } else if (starts_with(input, "CAT ")) {
+    fs_cat(input + 4);
   }
 }

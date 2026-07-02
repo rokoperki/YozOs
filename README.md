@@ -15,15 +15,20 @@ Done so far:
   dispatcher (EOIs + registered handlers).
 - **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
   `yozOS >` prompt dispatches commands: `END`, `MMAP`, `FALLOC`, `PTEST`,
-  `TASKTEST`.
+  `TASKTEST`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`, `CAT <file>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
   `CR2` address; `PTEST` proves the MMU is live.
 - **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
   switching driven off the timer IRQ (`TASKTEST`).
+- **Disk + filesystem** — ATA PIO (LBA28) driver: `IDENTIFY`, sector read/write
+  (`IDENT`/`RSECT`/`WSECT`). On top of it, a read-only FAT16 driver parses the
+  BPB (`FSINFO`), lists the root directory (`LS`) and reads files by name
+  (`CAT <file>`) off a disk formatted and populated from the host.
 
-Next: filesystem (Stage 5) — ATA PIO disk driver + FAT.
+Next: FAT16 **write** (create/delete/append), then userspace (Stage 6) —
+ring 3 + system calls.
 
 ## Layout
 
@@ -32,10 +37,11 @@ Next: filesystem (Stage 5) — ATA PIO disk driver + FAT.
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
 | `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) + shell dispatcher (`user_input`)                                    |
 | `cpu/`     | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`, ISR 14 page fault), `timer.c`                            |
-| `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler)                                                  |
+| `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                    |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
+| `fs/`      | Read-only FAT16: `fat.c` (BPB parse, root-dir `ls`, FAT-chain `cat`)                                               |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
 ## Toolchain
@@ -52,6 +58,7 @@ register constraints that fail under host Clang.
 ```bash
 make            # build bootable image (os-image.bin)
 make run        # build + boot in QEMU
+make run-disk   # boot in QEMU with a FAT16 data disk (disk.img) attached as IDE
 make usb        # flash image to a USB stick (see below)
 make clean      # remove build artifacts
 ```

@@ -27,5 +27,6 @@ typedef struct {
 void fs_init(void);
 void fs_info(void);
 void fs_ls(void);
+void fs_cat(char *name);
 
 #endif

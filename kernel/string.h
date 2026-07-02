@@ -8,6 +8,7 @@ void append(char s[], char n);
 void backspace(char s[]);
 int strlen(char s[]);
 int strcmp(char s1[], char s2[]);
+int starts_with(char s[], char prefix[]);
 void hex_to_ascii(u32 n, char s[]);
 void hex16_to_ascii(u16 n, char s[]);
 

@@ -52,6 +52,14 @@ int strcmp(char s1[], char s2[]) {
   return s1[i] - s2[i];
 }
 
+int starts_with(char s[], char prefix[]) {
+  for (int i = 0; prefix[i] != '\0'; i++) {
+    if (s[i] != prefix[i])
+      return 0;
+  }
+  return 1;
+}
+
 void hex_to_ascii(u32 n, char s[]) {
   for (int i = 0; i < 8; i++) {
     int shift = 28 - i * 4;

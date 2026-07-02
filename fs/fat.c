@@ -96,3 +96,66 @@ void fs_ls() {
     }
   }
 }
+
+u16 fat_entry(u32 cluster) {
+  u32 off = cluster * 2;
+  u16 buff[256];
+  ata_read((fat_start + off / 512), 1, buff);
+  return buff[(off % 512) / 2];
+}
+
+void fs_cat(char *name) {
+  char target[11];
+  name_to_83(name, target);
+
+  u16 first_cluster = 0;
+  u32 size = 0;
+  int found = 0;
+
+  for (u32 s = 0; s < root_sectors && !found; s++) {
+    u16 buff[256];
+    ata_read(root_start + s, 1, buff);
+    dir_entry_t *e = (dir_entry_t *)buff;
+    for (int i = 0; i < 16; i++) {
+      if (e[i].name[0] == 0x00) { // end of directory
+        s = root_sectors;         // stop the outer loop too
+        break;
+      }
+      int match = 1;
+      for (int k = 0; k < 11; k++)
+        if (e[i].name[k] != target[k]) {
+          match = 0;
+          break;
+        }
+      if (match) {
+        first_cluster = e[i].first_cluster;
+        size = e[i].size;
+        found = 1;
+        break;
+      }
+    }
+  }
+
+  if (!found) {
+    println("file not found");
+    return;
+  }
+
+  u16 cluster = first_cluster;
+  u32 remaining = size;
+  u16 buff[256]; // one sector
+
+  while (cluster < 0xFFF8 && remaining > 0) {
+    u32 lba = data_start + (cluster - 2) * sec_per_clus;
+    for (u8 sc = 0; sc < sec_per_clus && remaining > 0; sc++) {
+      ata_read(lba + sc, 1, buff);
+      char *bytes = (char *)buff;
+      u32 n = remaining < 512 ? remaining : 512;
+      for (u32 j = 0; j < n; j++)
+        print_char(bytes[j], -1, -1, 0);
+      remaining -= n;
+    }
+    cluster = fat_entry(cluster);
+  }
+  println("");
+}
