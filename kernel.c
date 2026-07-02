@@ -1,5 +1,6 @@
 #include "cpu/isr.h"
 #include "cpu/timer.h"
+#include "drivers/ata.h"
 #include "drivers/keyboard.h"
 #include "drivers/screen.h"
 #include "kernel/function.h"
@@ -65,5 +66,7 @@ void user_input(char *input) {
     UNUSED(x);
   } else if (strcmp(input, "TASKTEST") == 0) {
     test_task();
+  } else if (strcmp(input, "IDENT") == 0) {
+    ata_identify();
   }
 }

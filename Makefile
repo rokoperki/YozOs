@@ -83,9 +83,19 @@ $(OS_IMAGE): $(BOOT_BIN) kernel.bin
 	dd if=$(BOOT_BIN) of=$@ conv=notrunc 2>/dev/null
 	dd if=kernel.bin  of=$@ bs=512 seek=1 conv=notrunc 2>/dev/null
 
+# --- Data disk (ATA PIO target) ---------------------------------------------
+DISK_IMG := disk.img
+
+$(DISK_IMG):
+	dd if=/dev/zero of=$@ bs=512 count=2048 2>/dev/null
+
 # --- Run --------------------------------------------------------------------
 run: $(OS_IMAGE)
 	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy
+
+run-disk: $(OS_IMAGE) $(DISK_IMG)
+	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy \
+	        -drive format=raw,file=$(DISK_IMG),if=ide,index=0
 
 run-boot: $(BOOT_BIN)
 	$(QEMU) -drive format=raw,file=$(BOOT_BIN),index=0,if=floppy
@@ -107,7 +117,7 @@ usb: $(OS_IMAGE)
 	diskutil eject $(DISK)
 
 # --- Phony ------------------------------------------------------------------
-.PHONY: all boot basic kernel image run run-boot usb disasm-boot disasm-basic disasm-kernel clean
+.PHONY: all boot basic kernel image run run-disk run-boot usb disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 	@printf ">>> %s built: %s bytes (%s KiB)\n" "$(OS_IMAGE)" \
 	  "$$(stat -f%z $(OS_IMAGE))" "$$(( $$(stat -f%z $(OS_IMAGE)) / 1024 ))"
