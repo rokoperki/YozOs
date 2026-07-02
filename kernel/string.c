@@ -61,3 +61,13 @@ void hex_to_ascii(u32 n, char s[]) {
   }
   s[8] = '\0';
 }
+
+void hex16_to_ascii(u16 n, char s[]) {
+  for (int i = 0; i < 4; i++) {
+    int shift = 12 - i * 4;
+    int nibble = (n >> shift) & 0xF;
+    char hex[] = "0123456789ABCDEF";
+    s[i] = hex[nibble];
+  }
+  s[4] = '\0';
+}

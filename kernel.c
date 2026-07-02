@@ -68,5 +68,16 @@ void user_input(char *input) {
     test_task();
   } else if (strcmp(input, "IDENT") == 0) {
     ata_identify();
+
+  } else if (strcmp(input, "RSECT") == 0) {
+    u16 sector[256];
+    ata_read(0, 1, sector);
+    println((char *)sector);
+    for (int i = 0; i < 256; i++) {
+      char buff[10];
+      hex16_to_ascii(sector[i], buff);
+      print(buff);
+      print(" ");
+    }
   }
 }

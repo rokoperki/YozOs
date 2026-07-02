@@ -1,6 +1,8 @@
 #ifndef ATA_H
 #define ATA_H
 
+#include "../cpu/types.h"
+
 #define ATA_DATA 0x1f0
 #define ATA_ERROR 0x1f1
 #define ATA_SECCOUNT 0x1f2
@@ -26,5 +28,6 @@
 
 void ata_identify(void);
 int ata_poll(void);
+void ata_read(u32 lba, int sector_count, u16 *buff);
 
 #endif

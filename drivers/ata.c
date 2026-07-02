@@ -35,7 +35,7 @@ void ata_identify() {
   if (port_byte_in(ATA_STATUS) == 0x00)
     return;
 
-  if (port_byte_in(ATA_LBA_MID) != 0x0 || port_byte_in(ATA_LBA_HI) != 0x0)
+  if (port_byte_in(ATA_LBA_MID) != 0x00 || port_byte_in(ATA_LBA_HI) != 0x00)
     return;
 
   ata_poll();
@@ -53,4 +53,23 @@ void ata_identify() {
   }
   model[40] = '\0';
   println(model);
+}
+
+void ata_read(u32 lba, int sec_count, u16 *buff) {
+  port_byte_out(ATA_LBA_LO, lba & 0xff);
+  port_byte_out(ATA_LBA_MID, (lba >> 8) & 0xff);
+  port_byte_out(ATA_LBA_HI, (lba >> 16) & 0xff);
+  port_byte_out(ATA_DRIVE, (0xE0 | ((lba >> 24) & 0x0F)));
+
+  port_byte_out(ATA_SECCOUNT, sec_count);
+  port_byte_out(ATA_CMD, ATA_CMD_READ);
+
+  for (int s = 0; s < sec_count; s++) {
+    ata_400ns();
+    ata_poll();
+
+    for (int i = 0; i < 256; i++) {
+      buff[s * 256 + i] = port_word_in(ATA_DATA);
+    }
+  }
 }
