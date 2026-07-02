@@ -29,5 +29,6 @@
 void ata_identify(void);
 int ata_poll(void);
 void ata_read(u32 lba, int sector_count, u16 *buff);
+void ata_write(u32 lba, int sector_count, u16 *buff);
 
 #endif

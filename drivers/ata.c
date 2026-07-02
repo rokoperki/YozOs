@@ -73,3 +73,23 @@ void ata_read(u32 lba, int sec_count, u16 *buff) {
     }
   }
 }
+
+void ata_write(u32 lba, int sec_count, u16 *buff) {
+  port_byte_out(ATA_LBA_LO, lba & 0xff);
+  port_byte_out(ATA_LBA_MID, (lba >> 8) & 0xff);
+  port_byte_out(ATA_LBA_HI, (lba >> 16) & 0xff);
+  port_byte_out(ATA_DRIVE, (0xE0 | ((lba >> 24) & 0x0F)));
+
+  port_byte_out(ATA_SECCOUNT, sec_count);
+  port_byte_out(ATA_CMD, ATA_CMD_WRITE);
+
+  for (int s = 0; s < sec_count; s++) {
+    ata_poll();
+    for (int i = 0; i < 256; i++) {
+      port_word_out(ATA_DATA, buff[s * 256 + i]);
+    }
+  }
+  port_byte_out(ATA_CMD, ATA_CMD_FLUSH);
+  while (port_byte_in(ATA_STATUS) & ATA_SR_BSY)
+    ;
+}

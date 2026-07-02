@@ -79,5 +79,21 @@ void user_input(char *input) {
       print(buff);
       print(" ");
     }
+  } else if (strcmp(input, "WSECT") == 0) {
+    u16 sector[256];
+    for (int i = 0; i < 256; i++)
+      sector[i] = 0;
+    char *txt = (char *)sector;
+    char *msg = "WROTE-FROM-YOZOS";
+    for (int i = 0; msg[i]; i++)
+      txt[i] = msg[i];
+    ata_write(1, 1, sector);
+    println((char *)sector);
+    for (int i = 0; i < 256; i++) {
+      char buff[10];
+      hex16_to_ascii(sector[i], buff);
+      print(buff);
+      print(" ");
+    }
   }
 }
