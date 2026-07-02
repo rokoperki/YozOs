@@ -48,7 +48,7 @@ disasm-boot: $(BOOT_BIN)
 # --- Kernel -----------------------------------------------------------------
 # Linked to run at 0x1000, the address the boot sector loads it to and jumps.
 # basic.c is standalone scratch and is deliberately NOT in this list.
-C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c)
+C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c) $(wildcard fs/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
 
 # Standalone assembly linked into the kernel (NOT %include'd into the boot
@@ -93,8 +93,12 @@ $(DISK_IMG):
 run: $(OS_IMAGE)
 	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy
 
+# `-boot order=a` = boot the floppy first. Without it, SeaBIOS tries the IDE
+# disk first; a FAT-formatted disk.img has a boot sector that just prints
+# "This is not a bootable disk" and never falls through to the floppy.
 run-disk: $(OS_IMAGE) $(DISK_IMG)
-	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy \
+	$(QEMU) -boot order=a \
+	        -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy \
 	        -drive format=raw,file=$(DISK_IMG),if=ide,index=0
 
 run-boot: $(BOOT_BIN)

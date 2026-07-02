@@ -3,6 +3,7 @@
 #include "drivers/ata.h"
 #include "drivers/keyboard.h"
 #include "drivers/screen.h"
+#include "fs/fat.h"
 #include "kernel/function.h"
 #include "kernel/string.h"
 #include "memory/frame_alloc.h"
@@ -40,6 +41,9 @@ int main() {
 
   init_frames();
   init_paging();
+
+  fs_init();
+
   __asm__ __volatile__("sti");
   return 0;
 }
@@ -95,5 +99,7 @@ void user_input(char *input) {
       print(buff);
       print(" ");
     }
+  } else if (strcmp(input, "FSINFO") == 0) {
+    fs_info();
   }
 }
