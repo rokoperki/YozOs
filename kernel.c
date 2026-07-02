@@ -101,5 +101,7 @@ void user_input(char *input) {
     }
   } else if (strcmp(input, "FSINFO") == 0) {
     fs_info();
+  } else if (strcmp(input, "LS") == 0) {
+    fs_ls();
   }
 }

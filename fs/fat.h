@@ -19,12 +19,13 @@ typedef struct {
 typedef struct {
   u8 name[11];                         // 0x00 - 8name 3ext
   u8 attr;                             // 0x0B
-  u8 reserved[10];                     // 0x0C
+  u8 reserved[14];                     // 0x0C
   u16 first_cluster;                   // 0x1A
   u32 size;                            // 0x1C
 } __attribute__((packed)) dir_entry_t; // 32B
 
 void fs_init(void);
 void fs_info(void);
+void fs_ls(void);
 
 #endif
