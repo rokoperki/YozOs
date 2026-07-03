@@ -29,5 +29,6 @@ void fs_info(void);
 void fs_ls(void);
 void fs_cat(char *name);
 void fs_create(char *name);
+void fs_write(char *name, char *text);
 
 #endif

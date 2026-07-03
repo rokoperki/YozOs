@@ -247,3 +247,70 @@ void fs_create(char *name) {
   dir_write_entry(lba, idx, n83, 0, 0, 0x20);
   println("created");
 }
+
+int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
+  u16 buff[256];
+  for (u32 s = 0; s < root_sectors; s++) {
+    u32 lba = root_start + s;
+    ata_read(lba, 1, buff);
+    dir_entry_t *e = (dir_entry_t *)buff;
+    for (int i = 0; i < 16; i++) {
+      if (e[i].name[0] == 0x00)
+        return 0; // end of dir → not found
+      if (e[i].name[0] == 0xE5)
+        continue; // deleted → skip
+
+      int match = 1;
+      for (int k = 0; k < 11; k++)
+        if (e[i].name[k] != name83[k]) {
+          match = 0;
+          break;
+        }
+      if (match) {
+        *out_lba = lba;
+        *out_idx = i;
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
+void fs_write(char *name, char *text) {
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find(n83, &dir_lba, &idx)) {
+    println("no such file");
+    return;
+  }
+
+  u32 len = strlen(text);
+  if (len > (u32)sec_per_clus * 512) { // v1: must fit in one cluster
+    println("too big for v1");
+    return;
+  }
+  if (len > 512) {
+    println("too big for v1");
+    return;
+  }
+
+  u32 clus = fat_find_free();
+  if (clus == 0) {
+    println("not enough space");
+    return;
+  }
+  fat_set_entry(clus, 0xFFFF);
+
+  u32 data_lba = data_start + (clus - 2) * sec_per_clus;
+  u16 buff[256];
+  memory_set((u8 *)buff, 0, 512);
+  memory_copy(text, (char *)buff, len);
+
+  ata_write(data_lba, 1, buff);
+  dir_write_entry(dir_lba, idx, n83, clus, len, 0x20);
+  println("written");
+}

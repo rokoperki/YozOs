@@ -107,5 +107,15 @@ void user_input(char *input) {
     fs_cat(input + 4);
   } else if (starts_with(input, "CREATE")) {
     fs_create(input + 7);
+  } else if (starts_with(input, "WRITE ")) {
+    char *rest = input + 6;
+
+    int i = 0;
+    while (rest[i] && rest[i] != ' ')
+      i++;
+    if (rest[i] == ' ') {
+      rest[i] = '\0';
+      fs_write(rest, rest + i + 1);
+    }
   }
 }
