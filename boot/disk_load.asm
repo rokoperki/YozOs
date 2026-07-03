@@ -1,26 +1,53 @@
 ; load DH sectors to ES:BX from drive DL 
 
 disk_load:
-  push dx ;push dx to stack to track how many sectors were requested to read 
+  pusha 
+  mov [count], dh      ; save sector  
 
-  mov ah, 0x02 ; BIOS read sector function  
-  mov al, dh ; read DH sectors
-  mov ch, 0x00 ; cylinder 0 
-  mov dh, 0x00 ; head 0 
-  mov cl, 0x02 ; second sector (after boot sector)
+  mov word [lba], 1   ;LBA 1 start (0 - boot sect)
+  
+  .loop: 
+  ; conver LBA to CHS 
+  mov ax, [lba] 
+  xor dx, dx 
+  mov si, 18 
+  div si ; ax = LBA/18 (track), dx = lba%18 (sector offset)
 
-  int 0x13 ; BIOS interupt 
+  inc dx
+  mov [sect], dl    ;stash sector 
 
-  jc disk_error ; jump if carry flag set 
+  xor dx, dx 
+  mov si, 2
+  div si  ; ax = cylinder, dx = head 
+  mov [head], dl ;stash head 
 
-  pop dx  ;restore dx from stack 
-  cmp dh, al  ; if sectors_read != sectors_expecter 
-  jne disk_error
+  ;read one sector 
+  mov ah, 0x02 
+  mov al, 1 ;one sector 
+  mov ch, 0 ;cylinder low byte 
+  mov cl, [sect] 
+  mov dh, [head]
+  mov dl, [BOOT_DRIVE]
+  int 0x13
+  jc disk_error 
+
+  ;advance to next sector 
+  add bx, 512 
+  inc word [lba]
+  dec byte [count]
+  jnz .loop 
+  
+  popa 
   ret 
-
+  
 disk_error:
   mov bx, DISK_ERR_MSG 
   call print_string
   jmp $
 
 DISK_ERR_MSG: db "Disk read error! ",0 
+
+lba: dw 0 
+sect: db 0 
+head: db 0 
+count: db 0
