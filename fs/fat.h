@@ -28,5 +28,6 @@ void fs_init(void);
 void fs_info(void);
 void fs_ls(void);
 void fs_cat(char *name);
+void fs_create(char *name);
 
 #endif

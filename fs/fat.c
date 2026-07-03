@@ -1,12 +1,13 @@
 #include "fat.h"
 #include "../cpu/types.h"
 #include "../drivers/ata.h"
+#include "../kernel/mem.h"
 
 #include "../drivers/screen.h"
 #include "../kernel/string.h"
 
-static u32 fat_start, root_start, root_sectors, data_start;
-static u8 sec_per_clus;
+static u32 fat_start, root_start, root_sectors, data_start, sectors_per_fat;
+static u8 sec_per_clus, num_fats;
 
 static char to_upper(char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 
@@ -47,8 +48,9 @@ void fs_init() {
   u16 buff[256];
   ata_read(0, 1, buff);
   bpb_t *bpb = (bpb_t *)buff;
-
   fat_start = bpb->reserved_sectors;
+  num_fats = bpb->num_fats;
+  sectors_per_fat = bpb->sectors_per_fat;
   root_start = fat_start + (bpb->num_fats * bpb->sectors_per_fat);
   root_sectors = (bpb->root_entries * 32) / bpb->bytes_per_sector;
   data_start = root_start + root_sectors;
@@ -68,6 +70,12 @@ void fs_info() {
   println(b);
   print("sec/clus=");
   int_to_ascii(sec_per_clus, b);
+  println(b);
+  print("num fats=");
+  int_to_ascii(num_fats, b);
+  println(b);
+  print("sectors per fat=");
+  int_to_ascii(sectors_per_fat, b);
   println(b);
 }
 
@@ -160,4 +168,82 @@ void fs_cat(char *name) {
     cluster = fat_entry(cluster);
   }
   println("");
+}
+
+void fat_set_entry(u32 cluster, u16 value) {
+  u32 off = cluster * 2;
+  u16 buff[256];
+
+  for (int k = 0; k < num_fats; k++) {
+    u32 lba = fat_start + k * sectors_per_fat + off / 512;
+    ata_read(lba, 1, buff);
+    buff[(off % 512) / 2] = value;
+    ata_write(lba, 1, buff);
+  }
+}
+
+u32 fat_find_free() {
+  u32 total_slots = sectors_per_fat * 512 / 2;
+
+  for (u32 c = 2; c < total_slots; c++) {
+    if (fat_entry(c) == 0)
+      return c;
+  }
+
+  return 0;
+}
+
+int find_dir_free_slot(u32 *out_lba, int *out_index) {
+  u16 buff[256];
+
+  for (u32 s = 0; s < root_sectors; s++) {
+    u32 lba = root_start + s;
+    ata_read(lba, 1, buff);
+    dir_entry_t *e = (dir_entry_t *)buff;
+
+    for (int i = 0; i < 16; i++) {
+      u8 first = e[i].name[0];
+
+      if (first == 0x00 || first == 0xE5) {
+        *out_lba = lba;
+        *out_index = i;
+        return 1;
+      }
+    }
+  }
+
+  return 0;
+}
+
+void dir_write_entry(u32 lba, int index, char name83[11], u16 first_cluster,
+                     u32 size, u8 attr) {
+
+  u16 buff[256];
+  ata_read(lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  dir_entry_t *slot = &e[index];
+
+  memory_set((u8 *)slot, 0, sizeof(dir_entry_t));
+  memory_copy(name83, (char *)slot->name, 11);
+  slot->attr = attr;
+  slot->first_cluster = first_cluster;
+  slot->size = size;
+  ata_write(lba, 1, buff);
+}
+
+void fs_create(char *name) {
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 lba;
+  int idx;
+
+  if (!find_dir_free_slot(&lba, &idx)) {
+    println("dir full");
+    return;
+  }
+
+  dir_write_entry(lba, idx, n83, 0, 0, 0x20);
+  println("created");
 }

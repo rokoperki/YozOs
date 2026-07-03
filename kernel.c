@@ -105,5 +105,7 @@ void user_input(char *input) {
     fs_ls();
   } else if (starts_with(input, "CAT ")) {
     fs_cat(input + 4);
+  } else if (starts_with(input, "CREATE")) {
+    fs_create(input + 7);
   }
 }
