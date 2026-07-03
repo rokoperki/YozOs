@@ -30,5 +30,6 @@ void fs_ls(void);
 void fs_cat(char *name);
 void fs_create(char *name);
 void fs_write(char *name, char *text);
+void fs_delete(char *name);
 
 #endif

@@ -314,3 +314,31 @@ void fs_write(char *name, char *text) {
   dir_write_entry(dir_lba, idx, n83, clus, len, 0x20);
   println("written");
 }
+
+void fs_delete(char *name) {
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find(n83, &dir_lba, &idx)) {
+    println("no such file");
+    return;
+  }
+
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+  u16 clus = e[idx].first_cluster;
+
+  while (clus < 0xFFF8 && clus >= 2) {
+    u16 next = fat_entry(clus);
+    fat_set_entry(clus, 0x0000);
+    clus = next;
+  }
+
+  e[idx].name[0] = 0xE5;
+  ata_write(dir_lba, 1, buff);
+  println("deleted");
+}

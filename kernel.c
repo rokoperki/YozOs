@@ -117,5 +117,7 @@ void user_input(char *input) {
       rest[i] = '\0';
       fs_write(rest, rest + i + 1);
     }
+  } else if (starts_with(input, "DELETE ")) {
+    fs_delete(input + 7);
   }
 }
