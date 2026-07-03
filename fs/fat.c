@@ -86,6 +86,8 @@ void fs_ls() {
         continue; // lonf-filename fragment
       if (e[i].attr & 0x08)
         continue; // volume label
+      if (e[i].attr & 0x02)
+        continue; // macOS ._ sidecars .fseventsd
 
       char nm[13];
       name_from_83((char *)e[i].name, nm);
