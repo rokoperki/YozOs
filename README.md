@@ -16,7 +16,7 @@ Done so far:
 - **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
   table-driven `yozOS >` shell dispatches commands: `HELP`, `END`, `MMAP`,
   `FALLOC`, `PTEST`, `TASKTEST`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
-  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `DELETE <file>`.
+  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
@@ -27,11 +27,7 @@ Done so far:
   (`IDENT`/`RSECT`/`WSECT`). On top of it, a FAT16 driver parses the BPB
   (`FSINFO`), lists the root directory (`LS`), reads files by name
   (`CAT <file>`), and supports simple root-directory writes (`CREATE`, `WRITE`,
-  `DELETE`) on a FAT-formatted data disk.
-
-Next: finish FAT16 write correctness and depth: fix the re-`WRITE` cluster leak,
-then add multi-sector/multi-cluster writes and append. After that: userspace
-(ring 3 + system calls).
+  `DELETE`, `APPEND`, `RENAME`) on a FAT-formatted data disk.
 
 ## Layout
 
@@ -40,7 +36,7 @@ then add multi-sector/multi-cluster writes and append. After that: userspace
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
 | `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) and subsystem initialization                                         |
 | `cpu/`     | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`, ISR 14 page fault), `timer.c`                            |
-| `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                    |
+| `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                   |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
