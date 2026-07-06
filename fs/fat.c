@@ -232,20 +232,12 @@ void dir_write_entry(u32 lba, int index, char name83[11], u16 first_cluster,
   ata_write(lba, 1, buff);
 }
 
-void fs_create(char *name) {
-  char n83[11];
-  name_to_83(name, n83);
-
-  u32 lba;
-  int idx;
-
-  if (!find_dir_free_slot(&lba, &idx)) {
-    println("dir full");
-    return;
+static void free_chain(u16 first_cluster) {
+  while (first_cluster < 0xFFF8 && first_cluster >= 2) {
+    u16 next = fat_entry(first_cluster);
+    fat_set_entry(first_cluster, 0x0000);
+    first_cluster = next;
   }
-
-  dir_write_entry(lba, idx, n83, 0, 0, 0x20);
-  println("created");
 }
 
 int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
@@ -276,6 +268,27 @@ int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
   return 0;
 }
 
+void fs_create(char *name) {
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 lba;
+  int idx;
+
+  if (dir_find(n83, &lba, &idx)) {
+    println("file already exist.");
+    return;
+  }
+
+  if (!find_dir_free_slot(&lba, &idx)) {
+    println("dir full");
+    return;
+  }
+
+  dir_write_entry(lba, idx, n83, 0, 0, 0x20);
+  println("created");
+}
+
 void fs_write(char *name, char *text) {
   char n83[11];
   name_to_83(name, n83);
@@ -301,11 +314,7 @@ void fs_write(char *name, char *text) {
   u16 old_clus = e[idx].first_cluster;
 
   if (len == 0) {
-    while (old_clus >= 2 && old_clus < 0xFFF8) {
-      u16 next = fat_entry(old_clus);
-      fat_set_entry(old_clus, 0x0000);
-      old_clus = next;
-    }
+    free_chain(old_clus);
 
     dir_write_entry(dir_lba, idx, n83, 0, 0, 0x20);
     println("written");
@@ -356,11 +365,7 @@ void fs_write(char *name, char *text) {
     }
   }
 
-  while (old_clus >= 2 && old_clus < 0xFFF8) {
-    u16 next = fat_entry(old_clus);
-    fat_set_entry(old_clus, 0x0000);
-    old_clus = next;
-  }
+  free_chain(old_clus);
 
   dir_write_entry(dir_lba, idx, n83, chain[0], len, 0x20);
 
@@ -384,13 +389,133 @@ void fs_delete(char *name) {
   dir_entry_t *e = (dir_entry_t *)buff;
   u16 clus = e[idx].first_cluster;
 
-  while (clus < 0xFFF8 && clus >= 2) {
-    u16 next = fat_entry(clus);
-    fat_set_entry(clus, 0x0000);
-    clus = next;
-  }
+  free_chain(clus);
 
   e[idx].name[0] = 0xE5;
   ata_write(dir_lba, 1, buff);
   println("deleted");
+}
+
+void fs_append(char *name, char *text) {
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find(n83, &dir_lba, &idx)) {
+    println("no such file");
+    return;
+  }
+
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  u16 first_cluster = e[idx].first_cluster;
+  u32 old_size = e[idx].size;
+  u32 append_len = strlen(text);
+  u32 new_size = old_size + append_len;
+
+  if (append_len == 0) {
+    println("appended");
+    return;
+  }
+
+  if (new_size > 8192) {
+    println("too big for v1");
+    return;
+  }
+
+  if (first_cluster == 0) {
+    fs_write(name, text);
+    return;
+  }
+
+  u32 cluster_bytes = sec_per_clus * 512;
+  u32 offset_in_cluster = old_size % cluster_bytes;
+  u32 sector_in_cluster = offset_in_cluster / 512;
+  u32 byte_in_sector = offset_in_cluster % 512;
+
+  u16 last_cluster = first_cluster;
+  u16 next = fat_entry(last_cluster);
+  while (next < 0xFFF8) {
+    last_cluster = next;
+    next = fat_entry(last_cluster);
+  }
+
+  if (offset_in_cluster == 0) {
+    u16 new_clus = fat_find_free();
+    if (new_clus == 0) {
+      println("not enough space");
+      return;
+    }
+
+    fat_set_entry(last_cluster, new_clus);
+    fat_set_entry(new_clus, 0xFFFF);
+
+    last_cluster = new_clus;
+    sector_in_cluster = 0;
+    byte_in_sector = 0;
+  }
+
+  u32 remaining = append_len;
+  u32 src_offset = 0;
+  u16 current_cluster = last_cluster;
+
+  u32 data_lba = data_start + (current_cluster - 2) * sec_per_clus;
+
+  for (u32 sc = sector_in_cluster; sc < sec_per_clus && remaining > 0; sc++) {
+    u16 sector_buff[256];
+    ata_read(data_lba + sc, 1, sector_buff);
+
+    u32 room = 512 - byte_in_sector;
+    u32 can_write = remaining < room ? remaining : room;
+
+    char *bytes = (char *)sector_buff;
+    memory_copy(text + src_offset, bytes + byte_in_sector, can_write);
+
+    ata_write(data_lba + sc, 1, sector_buff);
+
+    remaining -= can_write;
+    src_offset += can_write;
+    byte_in_sector = 0;
+  }
+
+  if (remaining == 0) {
+    e[idx].size = new_size;
+    ata_write(dir_lba, 1, buff);
+    println("appended");
+    return;
+  }
+
+  while (remaining > 0) {
+    u16 new_clus = fat_find_free();
+    if (new_clus == 0) {
+      println("not enough space");
+      return;
+    }
+
+    fat_set_entry(current_cluster, new_clus);
+    fat_set_entry(new_clus, 0xFFFF);
+    current_cluster = new_clus;
+
+    u32 data_lba = data_start + (current_cluster - 2) * sec_per_clus;
+    for (u16 sc = 0; sc < sec_per_clus && remaining > 0; sc++) {
+      u16 sector_buff[256];
+      memory_set((u8 *)sector_buff, 0, 512);
+
+      u32 chunk = remaining < 512 ? remaining : 512;
+      memory_copy(text + src_offset, (char *)sector_buff, chunk);
+
+      ata_write(data_lba + sc, 1, sector_buff);
+
+      remaining -= chunk;
+      src_offset += chunk;
+    }
+  }
+
+  e[idx].size = new_size;
+  ata_write(dir_lba, 1, buff);
+  println("appended");
 }

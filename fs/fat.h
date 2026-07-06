@@ -31,5 +31,6 @@ void fs_cat(char *name);
 void fs_create(char *name);
 void fs_write(char *name, char *text);
 void fs_delete(char *name);
+void fs_append(char *name, char *text);
 
 #endif

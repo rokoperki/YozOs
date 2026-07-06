@@ -34,6 +34,7 @@ static void cmd_create(char *a);
 static void cmd_write(char *a);
 static void cmd_writepat(char *a);
 static void cmd_delete(char *a);
+static void cmd_append(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -52,6 +53,7 @@ static const command_t commands[] = {
     {"WRITE", cmd_write, "<file> <text>  write a file"},
     {"WRITEPAT", cmd_writepat, "<file> <size>  write test pattern"},
     {"DELETE", cmd_delete, "<file>  remove a file"},
+    {"APPEND", cmd_append, "<file> <text> append new text on existing in file"},
     {0, 0, 0},
 };
 
@@ -168,6 +170,19 @@ static void cmd_write(char *a) {
   }
   a[i] = '\0';
   fs_write(a, a + i + 1);
+}
+
+static void cmd_append(char *a) {
+  // split args into "<file>" and "<text>" at the first space
+  int i = 0;
+  while (a[i] && a[i] != ' ')
+    i++;
+  if (a[i] != ' ') {
+    println("usage: APPEND <file> <text>");
+    return;
+  }
+  a[i] = '\0';
+  fs_append(a, a + i + 1);
 }
 
 static int parse_u32(char *s, u32 *out) {
