@@ -10,12 +10,16 @@
 [extern __bss_start] ;ld provided start and end of .bss 
 [extern _end]
 
+mov esp, 0x90000 
+mov ebp, esp
+
 cld ;ensure stosb counts upwards 
 mov edi, __bss_start 
 mov ecx, _end 
 sub ecx, edi    ; ecx = num of bytes to zero 
 xor eax, eax ; write 0 to [edi], ecx times 
 rep stosb
+
 
 call main           ; enter the C kernel
 jmp $               ; if main ever returns, hang here instead of running garbage

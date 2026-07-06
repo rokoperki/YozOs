@@ -289,7 +289,7 @@ void fs_write(char *name, char *text) {
   }
 
   u32 len = strlen(text);
-  if (len > (u32)sec_per_clus * 512) { // v1: must fit in one cluster
+  if (len > 8192) { // v1: must fit in one cluster
     println("too big for v1");
     return;
   }
@@ -300,29 +300,60 @@ void fs_write(char *name, char *text) {
 
   u16 old_clus = e[idx].first_cluster;
 
-  u16 new_clus = fat_find_free();
-  if (new_clus == 0) {
-    println("not enough space");
+  if (len == 0) {
+    while (old_clus >= 2 && old_clus < 0xFFF8) {
+      u16 next = fat_entry(old_clus);
+      fat_set_entry(old_clus, 0x0000);
+      old_clus = next;
+    }
+
+    dir_write_entry(dir_lba, idx, n83, 0, 0, 0x20);
+    println("written");
     return;
   }
-  fat_set_entry(new_clus, 0xFFFF);
+
+  u32 cluster_bytes = sec_per_clus * 512;
+  u32 needed = (len + cluster_bytes - 1) / cluster_bytes;
+
+  u16 chain[4];
+
+  for (u32 i = 0; i < needed; i++) {
+    u16 clus = fat_find_free();
+    if (clus == 0) {
+      for (u32 j = 0; j < i; j++) {
+        fat_set_entry(chain[j], 0x0000);
+      }
+      println("not enough space");
+      return;
+    }
+
+    chain[i] = clus;
+    fat_set_entry(clus, 0xFFFF);
+  }
+
+  for (u32 i = 0; i < needed - 1; i++) {
+    fat_set_entry(chain[i], chain[i + 1]);
+  }
+  fat_set_entry(chain[needed - 1], 0xFFFF);
 
   u32 offset = 0;
-  u32 data_lba = data_start + (new_clus - 2) * sec_per_clus;
+  for (u32 i = 0; i < needed; i++) {
+    u32 data_lba = data_start + (chain[i] - 2) * sec_per_clus;
 
-  for (u16 sc = 0; sc < sec_per_clus; sc++) {
-    if (offset == len)
-      break;
+    for (u16 sc = 0; sc < sec_per_clus; sc++) {
+      if (offset == len)
+        break;
 
-    u32 remaining = len - offset;
-    u32 chunk = remaining < 512 ? remaining : 512;
+      u32 remaining = len - offset;
+      u32 chunk = remaining < 512 ? remaining : 512;
 
-    memory_set((u8 *)buff, 0, 512);
-    memory_copy(text + offset, (char *)buff, chunk);
+      memory_set((u8 *)buff, 0, 512);
+      memory_copy(text + offset, (char *)buff, chunk);
 
-    ata_write(data_lba + sc, 1, buff);
+      ata_write(data_lba + sc, 1, buff);
 
-    offset += chunk;
+      offset += chunk;
+    }
   }
 
   while (old_clus >= 2 && old_clus < 0xFFF8) {
@@ -331,7 +362,7 @@ void fs_write(char *name, char *text) {
     old_clus = next;
   }
 
-  dir_write_entry(dir_lba, idx, n83, new_clus, len, 0x20);
+  dir_write_entry(dir_lba, idx, n83, chain[0], len, 0x20);
 
   println("written");
 }

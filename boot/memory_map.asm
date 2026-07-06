@@ -1,9 +1,13 @@
 ;INT 0x15, eax=0xE820 Bious function to get memmory map 
 ;input: es:di -> destination of 24B entries 
 ;output: bp = entry count, trashes all registers except esi 
-mmap_ent equ 0x8000 ; number of entries will be stored at 0x8000 
+mmap_seg equ 0x7000
+mmap_ent equ 0x0000 ; number of entries will be stored at 0x70000
 do_e820:
-  mov di, 0x8004
+  push es
+  mov ax, mmap_seg
+  mov es, ax
+  mov di, 0x0004
   xor ebx, ebx      ;ebx must be 0 
   xor bp, bp        ;keep an entry count in bp 
   mov edx, 0x0534D4150    ;place "SMAP"
@@ -44,7 +48,9 @@ do_e820:
 .e820f:
   mov [es:mmap_ent], bp    ;store entry count 
   clc   ;there is js on end of list to this point, so the carry must be cleared 
+  pop es
   ret
 .failed:
+  pop es
   stc   ;function unsupported err exit 
   ret 

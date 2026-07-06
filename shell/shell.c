@@ -32,6 +32,7 @@ static void cmd_ls(char *a);
 static void cmd_cat(char *a);
 static void cmd_create(char *a);
 static void cmd_write(char *a);
+static void cmd_writepat(char *a);
 static void cmd_delete(char *a);
 
 static const command_t commands[] = {
@@ -49,6 +50,7 @@ static const command_t commands[] = {
     {"CAT", cmd_cat, "<file>  print a file"},
     {"CREATE", cmd_create, "<file>  make empty file"},
     {"WRITE", cmd_write, "<file> <text>  write a file"},
+    {"WRITEPAT", cmd_writepat, "<file> <size>  write test pattern"},
     {"DELETE", cmd_delete, "<file>  remove a file"},
     {0, 0, 0},
 };
@@ -166,6 +168,49 @@ static void cmd_write(char *a) {
   }
   a[i] = '\0';
   fs_write(a, a + i + 1);
+}
+
+static int parse_u32(char *s, u32 *out) {
+  if (!s[0])
+    return 0;
+
+  u32 n = 0;
+  for (int i = 0; s[i]; i++) {
+    if (s[i] < '0' || s[i] > '9')
+      return 0;
+    n = n * 10 + (s[i] - '0');
+  }
+
+  *out = n;
+  return 1;
+}
+
+static void cmd_writepat(char *a) {
+  int i = 0;
+  while (a[i] && a[i] != ' ')
+    i++;
+  if (a[i] != ' ') {
+    println("usage: WRITEPAT <file> <size>");
+    return;
+  }
+  a[i] = '\0';
+
+  u32 size;
+  if (!parse_u32(a + i + 1, &size)) {
+    println("usage: WRITEPAT <file> <size>");
+    return;
+  }
+  if (size > 2400) {
+    println("too big for v1");
+    return;
+  }
+
+  static char pattern[2401];
+  for (u32 j = 0; j < size; j++)
+    pattern[j] = 'A' + ((j / 512) % 26);
+  pattern[size] = '\0';
+
+  fs_write(a, pattern);
 }
 
 static void cmd_delete(char *a) { fs_delete(a); }

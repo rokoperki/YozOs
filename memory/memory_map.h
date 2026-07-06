@@ -10,8 +10,8 @@ typedef struct {
   u32 acpi; // extended attributes (the ACPI 3.x word)
 } __attribute__((packed)) e820_entry_t;
 
-#define MMAP_ENT_NUM 0x8000
-#define MMAP_ENT_START 0x8004
+#define MMAP_ENT_NUM 0x70000
+#define MMAP_ENT_START 0x70004
 
 void print_u64(u64 number, char buf[]);
 
