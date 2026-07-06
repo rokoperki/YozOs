@@ -1,7 +1,7 @@
 #include "keyboard.h"
 #include "../cpu/isr.h"
 #include "../cpu/types.h"
-#include "../kernel.h"
+#include "../shell/shell.h"
 #include "../kernel/function.h"
 #include "../kernel/string.h"
 #include "keyboard.h"

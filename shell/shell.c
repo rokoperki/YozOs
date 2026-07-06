@@ -1,0 +1,191 @@
+#include "shell.h"
+
+#include "../cpu/types.h"
+#include "../drivers/ata.h"
+#include "../drivers/screen.h"
+#include "../fs/fat.h"
+#include "../kernel/function.h"
+#include "../kernel/string.h"
+#include "../memory/frame_alloc.h"
+#include "../memory/memory_map.h"
+#include "../task/task.h"
+
+typedef void (*cmd_fn)(char *args);
+
+typedef struct {
+  const char *name;
+  cmd_fn handler;
+  const char *help;
+} command_t;
+
+static void cmd_help(char *a);
+static void cmd_end(char *a);
+static void cmd_mmap(char *a);
+static void cmd_falloc(char *a);
+static void cmd_ptest(char *a);
+static void cmd_tasktest(char *a);
+static void cmd_ident(char *a);
+static void cmd_rsect(char *a);
+static void cmd_wsect(char *a);
+static void cmd_fsinfo(char *a);
+static void cmd_ls(char *a);
+static void cmd_cat(char *a);
+static void cmd_create(char *a);
+static void cmd_write(char *a);
+static void cmd_delete(char *a);
+
+static const command_t commands[] = {
+    {"HELP", cmd_help, "list commands"},
+    {"END", cmd_end, "halt the CPU"},
+    {"MMAP", cmd_mmap, "print E820 memory map"},
+    {"FALLOC", cmd_falloc, "frame allocator test"},
+    {"PTEST", cmd_ptest, "trigger a page fault"},
+    {"TASKTEST", cmd_tasktest, "multitasking test"},
+    {"IDENT", cmd_ident, "ATA IDENTIFY"},
+    {"RSECT", cmd_rsect, "read+dump sector 0"},
+    {"WSECT", cmd_wsect, "write test sector 1"},
+    {"FSINFO", cmd_fsinfo, "FAT16 BPB info"},
+    {"LS", cmd_ls, "list root directory"},
+    {"CAT", cmd_cat, "<file>  print a file"},
+    {"CREATE", cmd_create, "<file>  make empty file"},
+    {"WRITE", cmd_write, "<file> <text>  write a file"},
+    {"DELETE", cmd_delete, "<file>  remove a file"},
+    {0, 0, 0},
+};
+
+static void cmd_help(char *a) {
+  UNUSED(a);
+  for (int i = 0; commands[i].name; i++) {
+    print("  ");
+    print(commands[i].name);
+    print("  ");
+    println(commands[i].help);
+  }
+}
+
+static void cmd_end(char *a) {
+  UNUSED(a);
+  print("Stopping the CPU. Bye!\n");
+  asm volatile("hlt");
+}
+
+static void cmd_mmap(char *a) {
+  UNUSED(a);
+  memory_map_print();
+}
+
+static void cmd_falloc(char *a) {
+  UNUSED(a);
+  char buf[50];
+  for (int i = 0; i < 4; i++) {
+    u32 addr = alloc_frame();
+    print_u64(addr, buf);
+    if (i == 2)
+      free_frame(addr);
+    println("");
+  }
+}
+
+static void cmd_ptest(char *a) {
+  UNUSED(a);
+  u32 *bad = (u32 *)0x800000; // 8 MiB — PDE[1], not present
+  u32 x = *bad;               // ← page fault fires here
+  UNUSED(x);
+}
+
+static void cmd_tasktest(char *a) {
+  UNUSED(a);
+  test_task();
+}
+
+static void cmd_ident(char *a) {
+  UNUSED(a);
+  ata_identify();
+}
+
+static void cmd_rsect(char *a) {
+  UNUSED(a);
+  u16 sector[256];
+  ata_read(0, 1, sector);
+  println((char *)sector);
+  for (int i = 0; i < 256; i++) {
+    char buff[10];
+    hex16_to_ascii(sector[i], buff);
+    print(buff);
+    print(" ");
+  }
+}
+
+static void cmd_wsect(char *a) {
+  UNUSED(a);
+  u16 sector[256];
+  for (int i = 0; i < 256; i++)
+    sector[i] = 0;
+  char *txt = (char *)sector;
+  char *msg = "WROTE-FROM-YOZOS";
+  for (int i = 0; msg[i]; i++)
+    txt[i] = msg[i];
+  ata_write(1, 1, sector);
+  println((char *)sector);
+  for (int i = 0; i < 256; i++) {
+    char buff[10];
+    hex16_to_ascii(sector[i], buff);
+    print(buff);
+    print(" ");
+  }
+}
+
+static void cmd_fsinfo(char *a) {
+  UNUSED(a);
+  fs_info();
+}
+
+static void cmd_ls(char *a) {
+  UNUSED(a);
+  fs_ls();
+}
+
+static void cmd_cat(char *a) { fs_cat(a); }
+
+static void cmd_create(char *a) {
+  if (strcmp(a, " ") == 0 || strlen(a) == 0) {
+    println("usage CREATE <file>");
+    return;
+  }
+  fs_create(a);
+}
+
+static void cmd_write(char *a) {
+  // split args into "<file>" and "<text>" at the first space
+  int i = 0;
+  while (a[i] && a[i] != ' ')
+    i++;
+  if (a[i] != ' ') {
+    println("usage: WRITE <file> <text>");
+    return;
+  }
+  a[i] = '\0';
+  fs_write(a, a + i + 1);
+}
+
+static void cmd_delete(char *a) { fs_delete(a); }
+
+void user_input(char *input) {
+  char *args = input;
+  while (*args && *args != ' ')
+    args++;
+  if (*args == ' ') {
+    *args = '\0';
+    args++;
+  }
+
+  for (int i = 0; commands[i].name; i++) {
+    if (strcmp(input, commands[i].name) == 0) {
+      commands[i].handler(args);
+      return;
+    }
+  }
+
+  if (input[0])
+    print("unknown command (try HELP)\n");
+}

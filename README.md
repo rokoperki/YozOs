@@ -14,8 +14,9 @@ Done so far:
 - **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
   dispatcher (EOIs + registered handlers).
 - **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
-  `yozOS >` prompt dispatches commands: `END`, `MMAP`, `FALLOC`, `PTEST`,
-  `TASKTEST`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`, `CAT <file>`.
+  table-driven `yozOS >` shell dispatches commands: `HELP`, `END`, `MMAP`,
+  `FALLOC`, `PTEST`, `TASKTEST`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
+  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `DELETE <file>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
@@ -23,25 +24,28 @@ Done so far:
 - **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
   switching driven off the timer IRQ (`TASKTEST`).
 - **Disk + filesystem** — ATA PIO (LBA28) driver: `IDENTIFY`, sector read/write
-  (`IDENT`/`RSECT`/`WSECT`). On top of it, a read-only FAT16 driver parses the
-  BPB (`FSINFO`), lists the root directory (`LS`) and reads files by name
-  (`CAT <file>`) off a disk formatted and populated from the host.
+  (`IDENT`/`RSECT`/`WSECT`). On top of it, a FAT16 driver parses the BPB
+  (`FSINFO`), lists the root directory (`LS`), reads files by name
+  (`CAT <file>`), and supports simple root-directory writes (`CREATE`, `WRITE`,
+  `DELETE`) on a FAT-formatted data disk.
 
-Next: FAT16 **write** (create/delete/append), then userspace (Stage 6) —
-ring 3 + system calls.
+Next: finish FAT16 write correctness and depth: fix the re-`WRITE` cluster leak,
+then add multi-sector/multi-cluster writes and append. After that: userspace
+(ring 3 + system calls).
 
 ## Layout
 
 | Path       | Role                                                                                                               |
 | ---------- | ------------------------------------------------------------------------------------------------------------------ |
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
-| `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) + shell dispatcher (`user_input`)                                    |
+| `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) and subsystem initialization                                         |
 | `cpu/`     | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`, ISR 14 page fault), `timer.c`                            |
 | `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                    |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
-| `fs/`      | Read-only FAT16: `fat.c` (BPB parse, root-dir `ls`, FAT-chain `cat`)                                               |
+| `fs/`      | FAT16: `fat.c` (BPB parse, root-dir list/read/create/write/delete)                                                 |
+| `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
 ## Toolchain
@@ -63,8 +67,9 @@ make usb        # flash image to a USB stick (see below)
 make clean      # remove build artifacts
 ```
 
-`os-image.bin` is a 16-sector raw image: sector 0 is the boot sector, sectors
-1+ are the kernel (zero-padded; a too-small image trips `disk_error`).
+`os-image.bin` is a 1.44 MB raw floppy image: sector 0 is the boot sector,
+sectors 1+ contain the kernel, and the rest is zero-padded. The boot loader
+currently reads 40 kernel sectors from the floppy into memory.
 
 ## Booting on real hardware
 
