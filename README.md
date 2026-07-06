@@ -28,6 +28,8 @@ Done so far:
   (`FSINFO`), lists the root directory (`LS`), reads files by name
   (`CAT <file>`), and supports simple root-directory writes (`CREATE`, `WRITE`,
   `DELETE`, `APPEND`, `RENAME`) on a FAT-formatted data disk.
+  FAT support is intentionally scoped to the root directory, 8.3 filenames, and
+  files up to 8 KiB.
 
 ## Layout
 
@@ -40,7 +42,7 @@ Done so far:
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
-| `fs/`      | FAT16: `fat.c` (BPB parse, root-dir list/read/create/write/delete)                                                 |
+| `fs/`      | FAT16: `fat.c` (BPB parse, root-dir list/read/create/write/append/delete/rename; 8.3 names, 8 KiB files)           |
 | `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 

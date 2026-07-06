@@ -9,7 +9,77 @@
 static u32 fat_start, root_start, root_sectors, data_start, sectors_per_fat;
 static u8 sec_per_clus, num_fats;
 
+#define MAX_FILE_BYTES 8192
+#define MAX_CHAIN_CLUSTERS (MAX_FILE_BYTES / 512)
+
 static char to_upper(char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
+
+static int is_end_entry(const dir_entry_t *e) { return e->name[0] == 0x00; }
+
+static int is_deleted_entry(const dir_entry_t *e) { return e->name[0] == 0xE5; }
+
+static int is_long_name_entry(const dir_entry_t *e) { return e->attr == 0x0F; }
+
+static int is_volume_label_entry(const dir_entry_t *e) {
+  return (e->attr & 0x08) != 0;
+}
+
+static int is_hidden_sidecar_entry(const dir_entry_t *e) {
+  return (e->attr & 0x02) != 0;
+}
+
+static int is_skippable_entry(const dir_entry_t *e) {
+  return is_deleted_entry(e) || is_long_name_entry(e) ||
+         is_volume_label_entry(e) || is_hidden_sidecar_entry(e);
+}
+
+static int is_valid_name_char(char c) {
+  return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+         (c >= '0' && c <= '9') || c == '_' || c == '-';
+}
+
+static int name_is_valid_83(const char *name) {
+  int base_len = 0;
+  int ext_len = 0;
+  int seen_dot = 0;
+
+  if (!name[0] || name[0] == '.')
+    return 0;
+
+  for (int i = 0; name[i]; i++) {
+    char c = name[i];
+
+    if (c == '.') {
+      if (seen_dot)
+        return 0;
+      seen_dot = 1;
+      continue;
+    }
+
+    if (!is_valid_name_char(c))
+      return 0;
+
+    if (seen_dot) {
+      ext_len++;
+      if (ext_len > 3)
+        return 0;
+    } else {
+      base_len++;
+      if (base_len > 8)
+        return 0;
+    }
+  }
+
+  return base_len > 0;
+}
+
+static int require_valid_name(const char *name) {
+  if (name_is_valid_83(name))
+    return 1;
+
+  println("invalid 8.3 name");
+  return 0;
+}
 
 void name_to_83(const char *in, char out[11]) {
   for (int i = 0; i < 11; i++)
@@ -44,6 +114,34 @@ void name_from_83(const char in[11], char *out) {
   out[o] = '\0';
 }
 
+int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
+  u16 buff[256];
+  for (u32 s = 0; s < root_sectors; s++) {
+    u32 lba = root_start + s;
+    ata_read(lba, 1, buff);
+    dir_entry_t *e = (dir_entry_t *)buff;
+    for (int i = 0; i < 16; i++) {
+      if (is_end_entry(&e[i]))
+        return 0; // end of dir → not found
+      if (is_skippable_entry(&e[i]))
+        continue;
+
+      int match = 1;
+      for (int k = 0; k < 11; k++)
+        if (e[i].name[k] != name83[k]) {
+          match = 0;
+          break;
+        }
+      if (match) {
+        *out_lba = lba;
+        *out_idx = i;
+        return 1;
+      }
+    }
+  }
+  return 0;
+}
+
 void fs_init() {
   u16 buff[256];
   ata_read(0, 1, buff);
@@ -52,7 +150,8 @@ void fs_init() {
   num_fats = bpb->num_fats;
   sectors_per_fat = bpb->sectors_per_fat;
   root_start = fat_start + (bpb->num_fats * bpb->sectors_per_fat);
-  root_sectors = (bpb->root_entries * 32) / bpb->bytes_per_sector;
+  root_sectors = ((u32)bpb->root_entries * 32 + bpb->bytes_per_sector - 1) /
+                 bpb->bytes_per_sector;
   data_start = root_start + root_sectors;
   sec_per_clus = bpb->sectors_per_cluster;
 }
@@ -86,16 +185,10 @@ void fs_ls() {
     dir_entry_t *e = (dir_entry_t *)buff;
 
     for (int i = 0; i < 16; i++) {
-      if (e[i].name[0] == 0x00)
+      if (is_end_entry(&e[i]))
         return; // end of dir
-      if (e[i].name[0] == 0xE5)
-        continue; // deleted
-      if (e[i].attr == 0x0F)
-        continue; // lonf-filename fragment
-      if (e[i].attr & 0x08)
-        continue; // volume label
-      if (e[i].attr & 0x02)
-        continue; // macOS ._ sidecars .fseventsd
+      if (is_skippable_entry(&e[i]))
+        continue;
 
       char nm[13];
       name_from_83((char *)e[i].name, nm);
@@ -116,41 +209,26 @@ u16 fat_entry(u32 cluster) {
 
 void fs_cat(char *name) {
   char target[11];
+
+  if (!require_valid_name(name))
+    return;
+
   name_to_83(name, target);
 
-  u16 first_cluster = 0;
-  u32 size = 0;
-  int found = 0;
+  u32 dir_lba;
+  int idx;
 
-  for (u32 s = 0; s < root_sectors && !found; s++) {
-    u16 buff[256];
-    ata_read(root_start + s, 1, buff);
-    dir_entry_t *e = (dir_entry_t *)buff;
-    for (int i = 0; i < 16; i++) {
-      if (e[i].name[0] == 0x00) { // end of directory
-        s = root_sectors;         // stop the outer loop too
-        break;
-      }
-      int match = 1;
-      for (int k = 0; k < 11; k++)
-        if (e[i].name[k] != target[k]) {
-          match = 0;
-          break;
-        }
-      if (match) {
-        first_cluster = e[i].first_cluster;
-        size = e[i].size;
-        found = 1;
-        break;
-      }
-    }
-  }
-
-  if (!found) {
+  if (!dir_find(target, &dir_lba, &idx)) {
     println("file not found");
     return;
   }
 
+  u16 dir_buff[256];
+  ata_read(dir_lba, 1, dir_buff);
+  dir_entry_t *e = (dir_entry_t *)dir_buff;
+
+  u16 first_cluster = e[idx].first_cluster;
+  u32 size = e[idx].size;
   u16 cluster = first_cluster;
   u32 remaining = size;
   u16 buff[256]; // one sector
@@ -191,6 +269,18 @@ u32 fat_find_free() {
   }
 
   return 0;
+}
+
+static u32 count_free_clusters() {
+  u32 free_count = 0;
+  u32 total_slots = sectors_per_fat * 512 / 2;
+
+  for (u32 c = 2; c < total_slots; c++) {
+    if (fat_entry(c) == 0)
+      free_count++;
+  }
+
+  return free_count;
 }
 
 int find_dir_free_slot(u32 *out_lba, int *out_index) {
@@ -240,36 +330,12 @@ static void free_chain(u16 first_cluster) {
   }
 }
 
-int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
-  u16 buff[256];
-  for (u32 s = 0; s < root_sectors; s++) {
-    u32 lba = root_start + s;
-    ata_read(lba, 1, buff);
-    dir_entry_t *e = (dir_entry_t *)buff;
-    for (int i = 0; i < 16; i++) {
-      if (e[i].name[0] == 0x00)
-        return 0; // end of dir → not found
-      if (e[i].name[0] == 0xE5)
-        continue; // deleted → skip
-
-      int match = 1;
-      for (int k = 0; k < 11; k++)
-        if (e[i].name[k] != name83[k]) {
-          match = 0;
-          break;
-        }
-      if (match) {
-        *out_lba = lba;
-        *out_idx = i;
-        return 1;
-      }
-    }
-  }
-  return 0;
-}
-
 void fs_create(char *name) {
   char n83[11];
+
+  if (!require_valid_name(name))
+    return;
+
   name_to_83(name, n83);
 
   u32 lba;
@@ -291,6 +357,10 @@ void fs_create(char *name) {
 
 void fs_write(char *name, char *text) {
   char n83[11];
+
+  if (!require_valid_name(name))
+    return;
+
   name_to_83(name, n83);
 
   u32 dir_lba;
@@ -302,7 +372,7 @@ void fs_write(char *name, char *text) {
   }
 
   u32 len = strlen(text);
-  if (len > 8192) { // v1: must fit in one cluster
+  if (len > MAX_FILE_BYTES) {
     println("too big for v1");
     return;
   }
@@ -323,8 +393,12 @@ void fs_write(char *name, char *text) {
 
   u32 cluster_bytes = sec_per_clus * 512;
   u32 needed = (len + cluster_bytes - 1) / cluster_bytes;
+  if (needed > MAX_CHAIN_CLUSTERS) {
+    println("too big for v1");
+    return;
+  }
 
-  u16 chain[4];
+  u16 chain[MAX_CHAIN_CLUSTERS];
 
   for (u32 i = 0; i < needed; i++) {
     u16 clus = fat_find_free();
@@ -374,6 +448,10 @@ void fs_write(char *name, char *text) {
 
 void fs_delete(char *name) {
   char n83[11];
+
+  if (!require_valid_name(name))
+    return;
+
   name_to_83(name, n83);
 
   u32 dir_lba;
@@ -398,6 +476,10 @@ void fs_delete(char *name) {
 
 void fs_append(char *name, char *text) {
   char n83[11];
+
+  if (!require_valid_name(name))
+    return;
+
   name_to_83(name, n83);
 
   u32 dir_lba;
@@ -422,7 +504,7 @@ void fs_append(char *name, char *text) {
     return;
   }
 
-  if (new_size > 8192) {
+  if (new_size > MAX_FILE_BYTES) {
     println("too big for v1");
     return;
   }
@@ -436,6 +518,21 @@ void fs_append(char *name, char *text) {
   u32 offset_in_cluster = old_size % cluster_bytes;
   u32 sector_in_cluster = offset_in_cluster / 512;
   u32 byte_in_sector = offset_in_cluster % 512;
+  u32 free_in_tail = 0;
+  u32 extra_clusters_needed = 0;
+
+  if (offset_in_cluster != 0)
+    free_in_tail = cluster_bytes - offset_in_cluster;
+
+  if (append_len > free_in_tail) {
+    u32 extra_bytes = append_len - free_in_tail;
+    extra_clusters_needed = (extra_bytes + cluster_bytes - 1) / cluster_bytes;
+  }
+
+  if (extra_clusters_needed > count_free_clusters()) {
+    println("not enough space");
+    return;
+  }
 
   u16 last_cluster = first_cluster;
   u16 next = fat_entry(last_cluster);
@@ -523,6 +620,9 @@ void fs_append(char *name, char *text) {
 void fs_rename(char *name, char *new_name) {
   char n83[11];
   char newn83[11];
+
+  if (!require_valid_name(name) || !require_valid_name(new_name))
+    return;
 
   name_to_83(name, n83);
   name_to_83(new_name, newn83);
