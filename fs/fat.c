@@ -293,25 +293,46 @@ void fs_write(char *name, char *text) {
     println("too big for v1");
     return;
   }
-  if (len > 512) {
-    println("too big for v1");
-    return;
-  }
 
-  u32 clus = fat_find_free();
-  if (clus == 0) {
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  u16 old_clus = e[idx].first_cluster;
+
+  u16 new_clus = fat_find_free();
+  if (new_clus == 0) {
     println("not enough space");
     return;
   }
-  fat_set_entry(clus, 0xFFFF);
+  fat_set_entry(new_clus, 0xFFFF);
 
-  u32 data_lba = data_start + (clus - 2) * sec_per_clus;
-  u16 buff[256];
-  memory_set((u8 *)buff, 0, 512);
-  memory_copy(text, (char *)buff, len);
+  u32 offset = 0;
+  u32 data_lba = data_start + (new_clus - 2) * sec_per_clus;
 
-  ata_write(data_lba, 1, buff);
-  dir_write_entry(dir_lba, idx, n83, clus, len, 0x20);
+  for (u16 sc = 0; sc < sec_per_clus; sc++) {
+    if (offset == len)
+      break;
+
+    u32 remaining = len - offset;
+    u32 chunk = remaining < 512 ? remaining : 512;
+
+    memory_set((u8 *)buff, 0, 512);
+    memory_copy(text + offset, (char *)buff, chunk);
+
+    ata_write(data_lba + sc, 1, buff);
+
+    offset += chunk;
+  }
+
+  while (old_clus >= 2 && old_clus < 0xFFF8) {
+    u16 next = fat_entry(old_clus);
+    fat_set_entry(old_clus, 0x0000);
+    old_clus = next;
+  }
+
+  dir_write_entry(dir_lba, idx, n83, new_clus, len, 0x20);
+
   println("written");
 }
 

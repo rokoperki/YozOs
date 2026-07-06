@@ -1,9 +1,9 @@
 #include "keyboard.h"
 #include "../cpu/isr.h"
 #include "../cpu/types.h"
-#include "../shell/shell.h"
 #include "../kernel/function.h"
 #include "../kernel/string.h"
+#include "../shell/shell.h"
 #include "keyboard.h"
 #include "low_level.h"
 #include "screen.h"
@@ -11,7 +11,7 @@
 #define BACKSPACE 0x0E
 #define ENTER 0x1C
 #define SC_MAX 57
-static char key_buffer[256];
+static char key_buffer[1024];
 
 const char *sc_name[] = {
     "ERROR",     "Esc",     "1", "2", "3", "4",      "5",
