@@ -519,3 +519,37 @@ void fs_append(char *name, char *text) {
   ata_write(dir_lba, 1, buff);
   println("appended");
 }
+
+void fs_rename(char *name, char *new_name) {
+  char n83[11];
+  char newn83[11];
+
+  name_to_83(name, n83);
+  name_to_83(new_name, newn83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find(n83, &dir_lba, &idx)) {
+    println("no such file");
+    return;
+  }
+
+  u32 new_dir_lba;
+  int new_idx;
+
+  if (dir_find(newn83, &new_dir_lba, &new_idx)) {
+    println("new name file already exist");
+    return;
+  }
+
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  memory_copy(newn83, (char *)e[idx].name, 11);
+
+  ata_write(dir_lba, 1, buff);
+
+  println("renamed");
+}
