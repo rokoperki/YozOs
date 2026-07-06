@@ -1,3 +1,4 @@
+#include "cpu/gdt.h"
 #include "cpu/isr.h"
 #include "cpu/timer.h"
 #include "drivers/keyboard.h"
@@ -28,6 +29,7 @@ int main() {
   print("   [ ok ] screen driver online\n");
   print("\n");
 
+  gdt_install();
   isr_install();
 
   print("yozOS > ");
