@@ -1,6 +1,7 @@
 #include "shell.h"
 
 #include "../cpu/types.h"
+#include "../cpu/user_mode.h"
 #include "../drivers/ata.h"
 #include "../drivers/screen.h"
 #include "../fs/fat.h"
@@ -36,6 +37,7 @@ static void cmd_writepat(char *a);
 static void cmd_delete(char *a);
 static void cmd_append(char *a);
 static void cmd_rename(char *a);
+static void cmd_start_user_test(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -56,6 +58,7 @@ static const command_t commands[] = {
     {"DELETE", cmd_delete, "<file>  remove a file"},
     {"APPEND", cmd_append, "<file> <text> append new text on existing in file"},
     {"RENAME", cmd_rename, "<file> <name> rename file"},
+    {"USERTEST", cmd_start_user_test, "test user mode"},
     {0, 0, 0},
 };
 
@@ -262,4 +265,9 @@ void user_input(char *input) {
 
   if (input[0])
     print("unknown command (try HELP)\n");
+}
+
+void cmd_start_user_test(char *a) {
+  UNUSED(a);
+  enter_user_mode((u32)user_main, USER_STACK_TOP);
 }

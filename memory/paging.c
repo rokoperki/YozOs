@@ -10,10 +10,10 @@ void init_paging() {
   page_table = (u32 *)alloc_frame();
 
   for (int i = 0; i < PAGE_ENTRIES; i++) {
-    page_table[i] = (i * FRAME_SIZE) | PAGE_PRESENT | PAGE_RW;
+    page_table[i] = (i * FRAME_SIZE) | PAGE_PRESENT | PAGE_RW | PAGE_USER;
   }
 
-  page_directory[0] = (u32)page_table | PAGE_PRESENT | PAGE_RW;
+  page_directory[0] = (u32)page_table | PAGE_PRESENT | PAGE_RW | PAGE_USER;
   load_page_directory(page_directory);
   enable_paging();
 }

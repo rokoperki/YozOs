@@ -33,7 +33,7 @@ void gdt_install() {
   tss_install();
 
   u32 tss_base = (u32)tss_get_entry();
-  u32 tss_limit = tss_base + sizeof(tss_entry_t) - 1;
+  u32 tss_limit = sizeof(tss_entry_t) - 1;
   gdt_set_gate(5, tss_base, tss_limit, 0x89, 0x00);
 
   gdt_flush(&gdt_ptr);
