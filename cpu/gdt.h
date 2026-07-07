@@ -7,6 +7,7 @@
 #define KERNEL_DATA_SEG 0x10
 #define USER_CODE_SEG 0x1B
 #define USER_DATA_SEG 0x23
+#define TSS_SEG 0x28
 
 typedef struct {
   u16 limit_low;

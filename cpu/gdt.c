@@ -1,6 +1,7 @@
 #include "gdt.h"
+#include "tss.h"
 
-#define GDT_ENTRIES 5
+#define GDT_ENTRIES 6
 
 static gdt_entry_t gdt_entries[GDT_ENTRIES];
 static gdt_ptr_t gdt_ptr;
@@ -29,5 +30,12 @@ void gdt_install() {
   gdt_set_gate(3, 0, 0xFFFFF, 0xFA, 0xCF);
   gdt_set_gate(4, 0, 0xFFFFF, 0xF2, 0xCF);
 
+  tss_install();
+
+  u32 tss_base = (u32)tss_get_entry();
+  u32 tss_limit = tss_base + sizeof(tss_entry_t) - 1;
+  gdt_set_gate(5, tss_base, tss_limit, 0x89, 0x00);
+
   gdt_flush(&gdt_ptr);
+  tss_flush();
 }
