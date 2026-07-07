@@ -30,6 +30,11 @@ Done so far:
   `DELETE`, `APPEND`, `RENAME`) on a FAT-formatted data disk.
   FAT support is intentionally scoped to the root directory, 8.3 filenames, and
   files up to 8 KiB.
+- **Userspace bring-up** — the kernel now installs a C-managed final GDT with
+  ring-3 code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
+  switching, enters a linked-in user test with `iret`, proves privilege separation
+  with a ring-3 `cli` fault, and handles a first `int 0x80` syscall
+  (`SYS_WRITE_CHAR`).
 
 ## Layout
 
@@ -37,7 +42,7 @@ Done so far:
 | ---------- | ------------------------------------------------------------------------------------------------------------------ |
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
 | `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) and subsystem initialization                                         |
-| `cpu/`     | IDT, ISR/IRQ stubs (`interupt.asm`), dispatcher (`isr.c`, ISR 14 page fault), `timer.c`                            |
+| `cpu/`     | GDT/TSS/userspace entry, IDT, ISR/IRQ stubs (`interupt.asm`), syscall stub, dispatcher (`isr.c`), `timer.c`         |
 | `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                   |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |

@@ -5,6 +5,7 @@
 #include "../memory/memory_map.h"
 #include "../memory/paging.h"
 #include "idt.h"
+#include "syscall.h"
 
 isr_t interrupt_handlers[256];
 
@@ -72,6 +73,7 @@ void isr_install() {
   set_idt_gate(46, (u32)irq14);
   set_idt_gate(47, (u32)irq15);
 
+  syscall_install();
   set_idt();
 }
 
@@ -117,7 +119,8 @@ void isr_handler(registers_t r) {
     char buf[50];
     print_u64(read_cr2(), buf);
     println("");
-    asm volatile("cli; hlt"); // stop here so we don't loop on the faulting instr
+    asm volatile(
+        "cli; hlt"); // stop here so we don't loop on the faulting instr
   }
 
   print("received interrupt: ");

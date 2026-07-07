@@ -9,7 +9,7 @@ typedef struct {
   u16 low_offset; /* bits 0-15 of handler address */
   u16 sel;        /* kernel segment selector */
   u8 always0;
-  u8 flags; /* 0x8E = present, ring 0, 32-bit interrupt gate */
+  u8 flags;        /* 0x8E = present, ring 0, 32-bit interrupt gate */
   u16 high_offset; /* bits 16-31 of handler address */
 } __attribute__((packed)) idt_gate_t;
 
@@ -24,6 +24,7 @@ extern idt_gate_t idt[IDT_ENTRIES];
 extern idt_register_t idt_reg;
 
 void set_idt_gate(int n, u32 handler);
+void set_idt_gate_flags(int n, u32 handler, u8 flags);
 void set_idt();
 
 #endif
