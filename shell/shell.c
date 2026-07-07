@@ -38,6 +38,7 @@ static void cmd_delete(char *a);
 static void cmd_append(char *a);
 static void cmd_rename(char *a);
 static void cmd_start_user_test(char *a);
+static void cmd_start_fault_user_test(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -59,6 +60,7 @@ static const command_t commands[] = {
     {"APPEND", cmd_append, "<file> <text> append new text on existing in file"},
     {"RENAME", cmd_rename, "<file> <name> rename file"},
     {"USERTEST", cmd_start_user_test, "test user mode"},
+    {"USERFAULT", cmd_start_fault_user_test, "test fault user mode"},
     {0, 0, 0},
 };
 
@@ -267,9 +269,7 @@ void user_input(char *input) {
     print("unknown command (try HELP)\n");
 }
 
-void cmd_start_user_test(char *a) {
-  UNUSED(a);
-  int code = run_user_test();
+static void restore_kernel_segments(void) {
   asm volatile("mov $0x10, %%ax\n"
                "mov %%ax, %%ds\n"
                "mov %%ax, %%es\n"
@@ -278,9 +278,25 @@ void cmd_start_user_test(char *a) {
                :
                :
                : "ax");
-  char buff[16];
+}
 
+static void print_user_exit_code(int code) {
+  char buff[16];
   int_to_ascii(code, buff);
   print("exit code: ");
   println(buff);
+}
+
+static void cmd_start_user_test(char *a) {
+  UNUSED(a);
+  int code = run_user_test();
+  restore_kernel_segments();
+  print_user_exit_code(code);
+}
+
+void cmd_start_fault_user_test(char *a) {
+  UNUSED(a);
+  int code = run_user_fault_test();
+  restore_kernel_segments();
+  print_user_exit_code(code);
 }

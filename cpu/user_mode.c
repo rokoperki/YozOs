@@ -82,6 +82,28 @@ int run_user_test() {
   return run_user_process(&process);
 }
 
+int run_user_fault_test(void) {
+  user_region_t regions[] = {
+      {(u32)user_fault_test_main, FRAME_SIZE},
+      {(u32)user_fault_test_msg, user_fault_test_len},
+      {USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE},
+  };
+
+  user_program_t program = {.entry = (u32)user_fault_test_main,
+                            .stack_top = USER_STACK_TOP,
+                            .regions = regions,
+                            .region_count =
+                                sizeof(regions) / sizeof(regions[0])};
+
+  user_process_t process = {
+      .program = &program,
+      .state = USER_PROCESS_READY,
+      .exit_code = 0,
+  };
+
+  return run_user_process(&process);
+}
+
 void user_fault_current(void) {
   if (current_user_process)
     current_user_process->state = USER_PROCESS_FAILED;

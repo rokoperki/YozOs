@@ -2,6 +2,7 @@
 *.o
 *.elf
 *.bin
+boot/kernel_sectors.inc
 *.dis
 
 # OS disk image (padded build output + any old manual concatenation)

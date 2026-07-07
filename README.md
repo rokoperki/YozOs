@@ -9,7 +9,7 @@ cross-compiler; runs in QEMU and on real Legacy-BIOS hardware.
 
 Done so far:
 
-- **Boot → C kernel** — boot sector loads the kernel at `0x1000`, switches to
+- **Boot → C kernel** — boot sector loads the kernel at `0x10000`, switches to
   32-bit protected mode (GDT + `cr0.PE`), and calls `main()`.
 - **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
   dispatcher (EOIs + registered handlers).
@@ -48,7 +48,7 @@ Done so far:
 | Path       | Role                                                                                                               |
 | ---------- | ------------------------------------------------------------------------------------------------------------------ |
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
-| `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) and subsystem initialization                                         |
+| `kernel.c` | 32-bit C kernel `main()` (linked at `0x10000`) and subsystem initialization                                        |
 | `cpu/`     | GDT/TSS/userspace entry, IDT, ISR/IRQ stubs (`interupt.asm`), syscall stub/dispatcher, user syscall wrappers/test, `timer.c` |
 | `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                   |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
@@ -79,9 +79,9 @@ make clean      # remove build artifacts
 
 `os-image.bin` is a 1.44 MB raw floppy image: sector 0 is the boot sector,
 sectors 1+ contain the kernel, and the rest is zero-padded. The boot loader
-currently reads 52 kernel sectors from the floppy into memory. `make` prints the
-linked kernel size and sector count so the boot loader count can be kept ahead
-of kernel growth.
+currently reads 80 kernel sectors from the floppy into memory at physical
+`0x10000`. `make` prints the linked kernel size and sector count and fails if it
+exceeds the boot loader read count.
 
 ## Booting on real hardware
 

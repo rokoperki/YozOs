@@ -42,4 +42,6 @@ int run_user_test(void);
 
 void user_fault_current(void);
 
+int run_user_fault_test(void);
+
 #endif

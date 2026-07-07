@@ -1,6 +1,8 @@
 ; boot sector that boots C kernel i 32-bit protected mode 
 [org 0x7c00]
-KERNEL_OFFSET equ 0x1000    ; memory where we load kernel (and where kernel_entry sits)
+KERNEL_OFFSET equ 0x10000    ; memory where we load kernel (and where kernel_entry sits)
+KERNEL_SEG equ 0x1000        ; real-mode segment for physical 0x10000
+%include "kernel_sectors.inc"
 
 xor ax, ax                  ; zero the segment registers first — BIOS doesn't
 mov ds, ax                  ; guarantee they're 0 on real hardware, and the
@@ -9,7 +11,7 @@ mov ss, ax                  ; (xor ax leaves DL — the boot drive — untouched
 
 mov [BOOT_DRIVE], dl        ; BIOS stores our boot drive in DL
 
-mov bp, 0x9000              ; setup stack
+mov bp, 0xF000              ; setup stack
 mov sp, bp
 
 mov bx, MSG_REAL_MODE
@@ -34,8 +36,10 @@ load_kernel:
   mov bx, MSG_LOAD_KERNEL    
   call print_string
 
-  mov bx, KERNEL_OFFSET       ; load kernel sectors after the boot sector
-  mov dh, 52                  ; excluding boot, from boot disk to KERNEL_OFFSET
+  mov ax, KERNEL_SEG          ; ES:BX = 0x1000:0x0000 = physical 0x10000
+  mov es, ax
+  mov bx, 0x0000              ; load kernel sectors after the boot sector
+  mov dh, KERNEL_SECTORS      ; excluding boot, from boot disk to KERNEL_OFFSET
   mov dl, [BOOT_DRIVE]
   call disk_load
 
@@ -48,7 +52,7 @@ BEGIN_PM:
   mov ebx, MSG_PROT_MODE      ;announce protected mode
   call print_string_pm
 
-  call KERNEL_OFFSET ; jump to 0x1000 — the kernel_entry stub, which calls main
+  call KERNEL_OFFSET ; jump to 0x10000 — the kernel_entry stub, which calls main
 
   jmp $
 

@@ -19,8 +19,9 @@ LDFLAGS :=
 BOOT_SRC  := boot/boot_sect.asm
 BOOT_DEPS := $(wildcard boot/*.asm)
 BOOT_BIN  := boot/boot_sect.bin
+KERNEL_SECTORS_INC := boot/kernel_sectors.inc
 
-$(BOOT_BIN): $(BOOT_DEPS)
+$(BOOT_BIN): $(BOOT_DEPS) $(KERNEL_SECTORS_INC)
 	$(ASM) $(BOOT_SRC) -f bin -I boot/ -o $@
 
 # --- C scratch (basic.c demo from the book) ---------------------------------
@@ -46,7 +47,7 @@ disasm-boot: $(BOOT_BIN)
 	$(OBJDUMP) -D -b binary -mi386 -Mintel,addr16,data16 $(BOOT_BIN)
 
 # --- Kernel -----------------------------------------------------------------
-# Linked to run at 0x1000, the address the boot sector loads it to and jumps.
+# Linked to run at 0x10000, the address the boot sector loads it to and jumps.
 # basic.c is standalone scratch and is deliberately NOT in this list.
 C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c) $(wildcard fs/*.c) $(wildcard shell/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
@@ -66,11 +67,18 @@ kernel_entry.o: boot/kernel_entry.asm
 %.o: %.asm
 	$(ASM) $< -f elf -o $@
 
-# kernel_entry.o MUST come first so the byte at 0x1000 is the stub (calls main).
+# kernel_entry.o MUST come first so the byte at 0x10000 is the stub (calls main).
 kernel.bin: kernel_entry.o $(OBJ) $(ASM_OBJ)
-	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ $^
+	$(LD) $(LDFLAGS) -Ttext 0x10000 --oformat binary -o $@ $^
 	@printf ">>> %s built: %s bytes (%s sectors)\n" "$@" \
 	  "$$(stat -f%z $@)" "$$(( ( $$(stat -f%z $@) + 511 ) / 512 ))"
+
+$(KERNEL_SECTORS_INC): kernel.bin
+	@sectors=$$(( ( $$(stat -f%z $<) + 511 ) / 512 )); \
+	  test $$sectors -le 255 || \
+	    { echo "ERROR: kernel.bin too large for boot loader read count (max 255 sectors)"; exit 1; }; \
+	  printf "KERNEL_SECTORS equ %s\n" "$$sectors" > $@; \
+	  printf ">>> %s generated: %s sectors\n" "$@" "$$sectors"
 
 disasm-kernel: kernel.bin
 	$(OBJDUMP) -D -b binary -m i386 -Mintel kernel.bin
@@ -134,4 +142,4 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) $(OS_IMAGE)
+	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) $(OS_IMAGE)
