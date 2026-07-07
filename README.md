@@ -13,10 +13,12 @@ Done so far:
   32-bit protected mode (GDT + `cr0.PE`), and calls `main()`.
 - **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
   dispatcher (EOIs + registered handlers).
-- **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer; a
-  table-driven `yozOS >` shell dispatches commands: `HELP`, `END`, `MMAP`,
-  `FALLOC`, `PTEST`, `TASKTEST`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
-  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
+- **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer and
+  publishes completed lines; the kernel main loop dispatches shell commands
+  outside interrupt context. The table-driven `yozOS >` shell supports `HELP`,
+  `END`, `MMAP`, `FALLOC`, `PTEST`, `TASKTEST`, `IDENT`, `RSECT`, `WSECT`,
+  `FSINFO`, `LS`, `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`,
+  `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
@@ -30,12 +32,16 @@ Done so far:
   `DELETE`, `APPEND`, `RENAME`) on a FAT-formatted data disk.
   FAT support is intentionally scoped to the root directory, 8.3 filenames, and
   files up to 8 KiB.
-- **Userspace bring-up** — the kernel now installs a C-managed final GDT with
-  ring-3 code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
-  switching, enters a linked-in user test with `iret`, proves privilege separation
-  with a ring-3 `cli` fault, handles `int 0x80` syscalls (`SYS_WRITE_CHAR`,
-  `SYS_EXIT`), and returns from the linked-in user test back to the kernel shell
-  using a temporary test harness with a dedicated TSS kernel stack.
+- **Userspace bring-up** — the kernel installs a C-managed final GDT with ring-3
+  code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
+  switching, enters linked-in user programs with `iret`, and handles `int 0x80`
+  syscalls: `SYS_WRITE_CHAR`, `SYS_STRING_WRITE`, `SYS_WRITE_BUFFER`,
+  `SYS_READ_LINE`, and `SYS_EXIT`. Kernel pages are supervisor-only by default;
+  linked-in user code/data/stack regions are explicitly marked `PAGE_USER`, and
+  syscall pointer arguments are validated by walking page tables. Keyboard input
+  has shell/user ownership so `SYS_READ_LINE` can read a line while the shell is
+  not consuming it. The linked-in user test prints, rejects a bad pointer, reads
+  a line, echoes it, exits, and returns cleanly to the shell.
 
 ## Layout
 
@@ -43,7 +49,7 @@ Done so far:
 | ---------- | ------------------------------------------------------------------------------------------------------------------ |
 | `boot/`    | 512-byte boot sector + real-mode asm (GDT, E820 detection); `boot_sect.asm` `%include`s the rest                   |
 | `kernel.c` | 32-bit C kernel `main()` (linked at `0x1000`) and subsystem initialization                                         |
-| `cpu/`     | GDT/TSS/userspace entry, IDT, ISR/IRQ stubs (`interupt.asm`), syscall stub, dispatcher (`isr.c`), `timer.c`         |
+| `cpu/`     | GDT/TSS/userspace entry, IDT, ISR/IRQ stubs (`interupt.asm`), syscall stub/dispatcher, user syscall wrappers/test, `timer.c` |
 | `drivers/` | VGA text screen, port I/O primitives, `keyboard.c` (IRQ1 handler), `ata.c` (ATA PIO disk driver)                   |
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
@@ -73,7 +79,9 @@ make clean      # remove build artifacts
 
 `os-image.bin` is a 1.44 MB raw floppy image: sector 0 is the boot sector,
 sectors 1+ contain the kernel, and the rest is zero-padded. The boot loader
-currently reads 40 kernel sectors from the floppy into memory.
+currently reads 52 kernel sectors from the floppy into memory. `make` prints the
+linked kernel size and sector count so the boot loader count can be kept ahead
+of kernel growth.
 
 ## Booting on real hardware
 

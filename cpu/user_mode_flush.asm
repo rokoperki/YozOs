@@ -16,7 +16,7 @@ enter_user_mode:
 
   pushfd 
   pop eax 
-  and eax, 0xFFFFFDFF
+  or eax, 0x200
   push eax  ; eflags 
 
   push 0x1B ;user CS 

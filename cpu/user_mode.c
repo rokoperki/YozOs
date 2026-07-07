@@ -1,90 +1,57 @@
 #include "user_mode.h"
+#include "../drivers/keyboard.h"
 #include "../memory/paging.h"
-#include "syscall.h"
 #include "tss.h"
-
-typedef struct {
-  u32 entry;
-  u32 code_start;
-  u32 code_len;
-  u32 data_start;
-  u32 data_len;
-  u32 stack_top;
-  u32 stack_len;
-} user_program_t;
+#include "user_test.h"
 
 static void prepare_user_program(user_program_t *program) {
-  mark_user_range(program->code_start, program->code_len);
-  mark_user_range(program->data_start, program->data_len);
-  mark_user_range(program->stack_top - program->stack_len, program->stack_len);
+  for (u32 i = 0; i < program->region_count; i++) {
+    mark_user_range(program->regions[i].start, program->regions[i].len);
+  }
 }
 
 #define USER_KERNEL_STACK_SIZE 4096
 
 static u8 user_kernel_stack[USER_KERNEL_STACK_SIZE];
-static char user_msg[] = "ser mode says hi\n";
-static char bad_ptr_msg[] = "bad pointer rejected\n";
-static u32 syscall3(u32 num, u32 arg1, u32 arg2, u32 arg3) {
-  u32 ret;
-  asm volatile("int $0x80"
-               : "=a"(ret)
-               : "a"(num), "b"(arg1), "c"(arg2), "d"(arg3));
-  return ret;
-}
 
-static u32 sys_write_char(char c) {
-  return syscall3(SYS_WRITE_CHAR, (u32)c, 0, 0);
-}
+int run_user_program(user_program_t *program) {
+  u32 ret = user_context_save();
 
-static u32 sys_string_write(char *str) {
-  return syscall3(SYS_STRING_WRITE, (u32)str, 0, 0);
-}
-
-static void sys_exit(u32 code) {
-  syscall3(SYS_EXIT, code, 0, 0);
-  while (1) {
+  if (ret != 0) {
+    keyboard_set_owner(KEYBOARD_OWNER_SHELL);
+    tss_set_kernel_stack(0x90000);
+    __asm__ __volatile__("sti");
+    return ret - 1;
   }
-}
+  keyboard_clear_line();
+  keyboard_set_owner(KEYBOARD_OWNER_USER);
+  keyboard_clear_line();
+  prepare_user_program(program);
+  tss_set_kernel_stack((u32)user_kernel_stack + USER_KERNEL_STACK_SIZE);
+  enter_user_mode(program->entry, program->stack_top);
 
-static u32 sys_write_buffer(char *buff, u32 len) {
-  return syscall3(SYS_WRITE_BUFFER, (u32)buff, len, 0);
-}
-
-void user_main() {
-  sys_write_char('U');
-  sys_string_write(user_msg);
-
-  u32 ret = sys_write_buffer((char *)0xFFFFFFFF, 5);
-  if (ret == 0xFFFFFFFF) {
-    sys_string_write(bad_ptr_msg);
-  }
-  sys_exit(0);
+  tss_set_kernel_stack(0x90000);
+  return -1;
 }
 
 void user_exit_current(u32 code) { user_context_restore(code + 1); }
 
 int run_user_test() {
-  u32 ret = user_context_save();
-
-  if (ret != 0) {
-    tss_set_kernel_stack(0x90000);
-    return ret - 1;
-  }
-
-  user_program_t program = {
-      .entry = (u32)user_main,
-      .code_start = (u32)user_main,
-      .code_len = FRAME_SIZE,
-      .data_start = (u32)user_msg,
-      .data_len = sizeof(user_msg) + sizeof(bad_ptr_msg),
-      .stack_top = USER_STACK_TOP,
-      .stack_len = FRAME_SIZE,
+  user_region_t regions[] = {
+      {(u32)user_test_main, FRAME_SIZE},
+      {(u32)user_test_msg, user_test_msg_len},
+      {(u32)user_test_bad_ptr_msg, user_test_bad_ptr_msg_len},
+      {(u32)user_test_input_buf, user_test_input_buf_len},
+      {(u32)user_test_prompt, user_test_prompt_len},
+      {(u32)user_test_got_msg, user_test_got_msg_len},
+      {USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE},
   };
 
-  prepare_user_program(&program);
-  tss_set_kernel_stack((u32)user_kernel_stack + USER_KERNEL_STACK_SIZE);
-  enter_user_mode(program.entry, program.stack_top);
+  user_program_t program = {.entry = (u32)user_test_main,
+                            .stack_top = USER_STACK_TOP,
+                            .regions = regions,
+                            .region_count =
+                                sizeof(regions) / sizeof(regions[0])};
 
-  tss_set_kernel_stack(0x90000);
-  return -1;
+  return run_user_program(&program);
 }

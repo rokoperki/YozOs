@@ -1,4 +1,5 @@
 #include "syscall.h"
+#include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
 #include "../memory/paging.h"
 #include "idt.h"
@@ -54,6 +55,29 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
       print_char(((char *)arg1)[i], -1, -1, WHITE_ON_BLACK);
     }
     return 0;
+  }
+
+  if (num == SYS_READ_LINE) {
+    if (arg2 == 0 || arg2 > 256)
+      return 0xFFFFFFFF;
+    if (!user_pages_ok(arg1, arg2))
+      return 0xFFFFFFFF;
+
+    if (!keyboard_line_ready())
+      return 0;
+
+    char *src = keyboard_get_line();
+    char *dst = (char *)arg1;
+
+    u32 i = 0;
+    while (i + 1 < arg2 && src[i]) {
+      dst[i] = src[i];
+      i++;
+    }
+    dst[i] = '\0';
+
+    keyboard_clear_line();
+    return i;
   }
 
   return 0xFFFFFFFF;

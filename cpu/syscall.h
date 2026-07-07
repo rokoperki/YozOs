@@ -8,6 +8,7 @@
 #define SYS_EXIT 2
 #define SYS_STRING_WRITE 3
 #define SYS_WRITE_BUFFER 4
+#define SYS_READ_LINE 5
 
 extern void syscall_stub(void);
 

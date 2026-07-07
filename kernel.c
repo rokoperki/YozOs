@@ -11,25 +11,6 @@
 int main() {
   clear_screen();
 
-  print("\n");
-  print("  __    __    ______   ________   ______    ______   \n");
-  print(" /  |  /  |  /      \\ /        | /      \\  /      \\  \n");
-  print(" $$ |  $$ | /$$$$$$  |$$$$$$$$/ /$$$$$$  |/$$$$$$  | \n");
-  print(" $$ |  $$ | $$ |  $$ |   /$$/  $$ |  $$ |$$ \\__$$/  \n");
-  print(" $$  \\/$$/  $$ |  $$ |  /$$/   $$ |  $$ |$$      \\   \n");
-  print("  $$  $$<   $$ |  $$ | /$$/    $$ |  $$ | $$$$$$  |  \n");
-  print("   $$$$  \\  $$ \\__$$ |/$$/____ $$ \\__$$ |/  \\__$$ |  \n");
-  print("    $$  |   $$    $$/ $$       |$$    $$/ $$    $$/   \n");
-  print("    $$/      $$$$$$/  $$$$$$$$/  $$$$$$/   $$$$$$/    \n");
-  print("\n");
-  print("  ======================================================= \n");
-  print("  ======================================================= \n");
-  print("\n");
-  print("   [ ok ] boot sector\n");
-  print("   [ ok ] protected mode\n");
-  print("   [ ok ] screen driver online\n");
-  print("\n");
-
   gdt_install();
   isr_install();
 
@@ -45,7 +26,7 @@ int main() {
   __asm__ __volatile__("sti");
 
   while (1) {
-    if (keyboard_line_ready()) {
+    if (keyboard_line_ready() && keyboard_get_owner() == KEYBOARD_OWNER_SHELL) {
       user_input(keyboard_get_line());
       keyboard_clear_line();
       print("yozOS > ");

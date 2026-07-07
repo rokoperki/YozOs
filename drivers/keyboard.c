@@ -14,6 +14,11 @@
 static char key_buffer[1024];
 static char line_buffer[1024];
 static volatile int line_ready = 0;
+static keyboard_owner_t keyboard_owner = KEYBOARD_OWNER_SHELL;
+
+void keyboard_set_owner(keyboard_owner_t owner) { keyboard_owner = owner; }
+
+keyboard_owner_t keyboard_get_owner(void) { return keyboard_owner; }
 
 const char *sc_name[] = {
     "ERROR",     "Esc",     "1", "2", "3", "4",      "5",
