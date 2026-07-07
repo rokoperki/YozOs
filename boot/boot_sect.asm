@@ -35,7 +35,7 @@ load_kernel:
   call print_string
 
   mov bx, KERNEL_OFFSET       ; load kernel sectors after the boot sector
-  mov dh, 48                  ; excluding boot, from boot disk to KERNEL_OFFSET
+  mov dh, 52                  ; excluding boot, from boot disk to KERNEL_OFFSET
   mov dl, [BOOT_DRIVE]
   call disk_load
 

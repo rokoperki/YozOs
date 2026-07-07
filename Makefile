@@ -69,6 +69,8 @@ kernel_entry.o: boot/kernel_entry.asm
 # kernel_entry.o MUST come first so the byte at 0x1000 is the stub (calls main).
 kernel.bin: kernel_entry.o $(OBJ) $(ASM_OBJ)
 	$(LD) $(LDFLAGS) -Ttext 0x1000 --oformat binary -o $@ $^
+	@printf ">>> %s built: %s bytes (%s sectors)\n" "$@" \
+	  "$$(stat -f%z $@)" "$$(( ( $$(stat -f%z $@) + 511 ) / 512 ))"
 
 disasm-kernel: kernel.bin
 	$(OBJDUMP) -D -b binary -m i386 -Mintel kernel.bin

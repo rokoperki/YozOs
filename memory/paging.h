@@ -15,4 +15,9 @@ void map_page(u32 virt, u32 phys, u32 flags);
 extern void load_page_directory(u32 *dir);
 extern void enable_paging(void);
 extern u32 read_cr2(void);
+
+int user_pages_ok(u32 ptr, u32 len);
+void mark_user_page(u32 virt);
+void mark_user_range(u32 start, u32 len);
+
 #endif

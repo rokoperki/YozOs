@@ -275,7 +275,6 @@ void cmd_start_user_test(char *a) {
                "mov %%ax, %%es\n"
                "mov %%ax, %%fs\n"
                "mov %%ax, %%gs\n"
-               "sti\n"
                :
                :
                : "ax");

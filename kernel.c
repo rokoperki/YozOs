@@ -6,6 +6,7 @@
 #include "fs/fat.h"
 #include "memory/frame_alloc.h"
 #include "memory/paging.h"
+#include "shell/shell.h"
 
 int main() {
   clear_screen();
@@ -42,5 +43,14 @@ int main() {
   fs_init();
 
   __asm__ __volatile__("sti");
-  return 0;
+
+  while (1) {
+    if (keyboard_line_ready()) {
+      user_input(keyboard_get_line());
+      keyboard_clear_line();
+      print("yozOS > ");
+    }
+
+    __asm__ __volatile__("hlt");
+  }
 }

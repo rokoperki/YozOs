@@ -2,8 +2,8 @@
 #include "../cpu/isr.h"
 #include "../cpu/types.h"
 #include "../kernel/function.h"
+#include "../kernel/mem.h"
 #include "../kernel/string.h"
-#include "../shell/shell.h"
 #include "keyboard.h"
 #include "low_level.h"
 #include "screen.h"
@@ -12,6 +12,8 @@
 #define ENTER 0x1C
 #define SC_MAX 57
 static char key_buffer[1024];
+static char line_buffer[1024];
+static volatile int line_ready = 0;
 
 const char *sc_name[] = {
     "ERROR",     "Esc",     "1", "2", "3", "4",      "5",
@@ -42,8 +44,10 @@ static void keyboard_callback(registers_t regs) {
     }
   } else if (scancode == ENTER) {
     print("\n");
-    user_input(key_buffer);
-    print("yozOS > ");
+    if (!line_ready) {
+      memory_copy(key_buffer, line_buffer, strlen(key_buffer) + 1);
+      line_ready = 1;
+    }
     key_buffer[0] = '\0';
   } else {
     char letter = sc_ascii[(int)scancode];
@@ -55,3 +59,12 @@ static void keyboard_callback(registers_t regs) {
 }
 
 void init_keyboard() { register_interrupt_handler(IRQ1, keyboard_callback); }
+
+int keyboard_line_ready(void) { return line_ready; }
+
+char *keyboard_get_line(void) { return line_buffer; }
+
+void keyboard_clear_line(void) {
+  line_buffer[0] = '\0';
+  line_ready = 0;
+}
