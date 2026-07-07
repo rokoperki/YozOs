@@ -9,6 +9,7 @@
 #define SYS_STRING_WRITE 3
 #define SYS_WRITE_BUFFER 4
 #define SYS_READ_LINE 5
+#define SYS_YIELD 6
 
 extern void syscall_stub(void);
 

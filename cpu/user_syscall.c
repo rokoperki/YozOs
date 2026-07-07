@@ -28,3 +28,5 @@ void user_exit(u32 code) {
   while (1) {
   }
 }
+
+u32 user_yield(void) { return syscall3(SYS_YIELD, 0, 0, 0); }

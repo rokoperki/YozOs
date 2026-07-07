@@ -6,6 +6,7 @@
 #include "../memory/paging.h"
 #include "idt.h"
 #include "syscall.h"
+#include "user_mode.h"
 
 isr_t interrupt_handlers[256];
 
@@ -119,6 +120,26 @@ void isr_handler(registers_t r) {
     char buf[50];
     print_u64(read_cr2(), buf);
     println("");
+
+    print("EIP: ");
+    print_u64(r.eip, buf);
+    println("");
+
+    print("ERR: ");
+    print_u64(r.err_code, buf);
+    println("");
+
+    print("CS: ");
+    print_u64(r.cs, buf);
+    println("");
+
+    if ((r.cs & 0x3) == 3) {
+      println("fault origin: user");
+      user_fault_current();
+      return;
+    }
+
+    println("fault origin: kernel");
     asm volatile(
         "cli; hlt"); // stop here so we don't loop on the faulting instr
   }

@@ -25,6 +25,7 @@ void user_test_main(void) {
   u32 n = 0;
   user_write_string(user_test_prompt);
   while (n == 0) {
+    user_yield();
     n = user_read_line(user_test_input_buf, user_test_input_buf_len);
   }
 
@@ -33,6 +34,10 @@ void user_test_main(void) {
     user_write_string(user_test_input_buf);
     user_write_char('\n');
   }
+
+  u32 *bad = (u32 *)0xFFFFFFFF;
+  u32 x = *bad;
+  (void)x;
 
   user_exit(0);
 }

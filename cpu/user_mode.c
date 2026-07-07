@@ -13,6 +13,7 @@ static void prepare_user_program(user_program_t *program) {
 #define USER_KERNEL_STACK_SIZE 4096
 
 static u8 user_kernel_stack[USER_KERNEL_STACK_SIZE];
+static user_process_t *current_user_process;
 
 int run_user_program(user_program_t *program) {
   u32 ret = user_context_save();
@@ -25,7 +26,6 @@ int run_user_program(user_program_t *program) {
   }
   keyboard_clear_line();
   keyboard_set_owner(KEYBOARD_OWNER_USER);
-  keyboard_clear_line();
   prepare_user_program(program);
   tss_set_kernel_stack((u32)user_kernel_stack + USER_KERNEL_STACK_SIZE);
   enter_user_mode(program->entry, program->stack_top);
@@ -35,6 +35,26 @@ int run_user_program(user_program_t *program) {
 }
 
 void user_exit_current(u32 code) { user_context_restore(code + 1); }
+
+int run_user_process(user_process_t *process) {
+  current_user_process = process;
+  process->state = USER_PROCESS_RUNNING;
+
+  int code = run_user_program(process->program);
+
+  if ((u32)code == USER_EXIT_FAULT) {
+    process->state = USER_PROCESS_FAILED;
+  } else if (code < 0) {
+    process->state = USER_PROCESS_FAILED;
+  } else {
+    process->state = USER_PROCESS_EXITED;
+  }
+
+  process->exit_code = code;
+  current_user_process = 0;
+
+  return code;
+}
 
 int run_user_test() {
   user_region_t regions[] = {
@@ -53,5 +73,17 @@ int run_user_test() {
                             .region_count =
                                 sizeof(regions) / sizeof(regions[0])};
 
-  return run_user_program(&program);
+  user_process_t process = {
+      .program = &program,
+      .state = USER_PROCESS_READY,
+      .exit_code = 0,
+  };
+
+  return run_user_process(&process);
+}
+
+void user_fault_current(void) {
+  if (current_user_process)
+    current_user_process->state = USER_PROCESS_FAILED;
+  user_context_restore(USER_EXIT_FAULT + 1);
 }

@@ -80,5 +80,9 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     return i;
   }
 
+  if (num == SYS_YIELD) {
+    return 0;
+  }
+
   return 0xFFFFFFFF;
 }
