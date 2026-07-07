@@ -33,8 +33,9 @@ Done so far:
 - **Userspace bring-up** — the kernel now installs a C-managed final GDT with
   ring-3 code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
   switching, enters a linked-in user test with `iret`, proves privilege separation
-  with a ring-3 `cli` fault, and handles a first `int 0x80` syscall
-  (`SYS_WRITE_CHAR`).
+  with a ring-3 `cli` fault, handles `int 0x80` syscalls (`SYS_WRITE_CHAR`,
+  `SYS_EXIT`), and returns from the linked-in user test back to the kernel shell
+  using a temporary test harness with a dedicated TSS kernel stack.
 
 ## Layout
 

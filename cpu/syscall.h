@@ -5,6 +5,7 @@
 
 #define SYSCALL_INT 0x80
 #define SYS_WRITE_CHAR 1
+#define SYS_EXIT 2
 
 extern void syscall_stub(void);
 

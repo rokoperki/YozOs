@@ -269,5 +269,19 @@ void user_input(char *input) {
 
 void cmd_start_user_test(char *a) {
   UNUSED(a);
-  enter_user_mode((u32)user_main, USER_STACK_TOP);
+  int code = run_user_test();
+  asm volatile("mov $0x10, %%ax\n"
+               "mov %%ax, %%ds\n"
+               "mov %%ax, %%es\n"
+               "mov %%ax, %%fs\n"
+               "mov %%ax, %%gs\n"
+               "sti\n"
+               :
+               :
+               : "ax");
+  char buff[16];
+
+  int_to_ascii(code, buff);
+  print("exit code: ");
+  println(buff);
 }

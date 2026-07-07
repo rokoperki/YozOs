@@ -32,6 +32,7 @@ typedef struct {
 
 void tss_install(void);
 tss_entry_t *tss_get_entry(void);
+void tss_set_kernel_stack(u32 esp0);
 
 void tss_flush(void);
 

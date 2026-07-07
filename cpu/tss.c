@@ -12,3 +12,5 @@ void tss_install() {
 }
 
 tss_entry_t *tss_get_entry() { return &tss_entry; }
+
+void tss_set_kernel_stack(u32 esp0) { tss_entry.esp0 = esp0; }
