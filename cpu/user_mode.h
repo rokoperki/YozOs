@@ -12,6 +12,7 @@ typedef struct {
 } user_region_t;
 
 typedef enum {
+  USER_PROCESS_UNUSED,
   USER_PROCESS_READY,
   USER_PROCESS_RUNNING,
   USER_PROCESS_EXITED,
@@ -26,6 +27,7 @@ typedef struct {
 } user_program_t;
 
 typedef struct {
+  const char *name;
   user_program_t *program;
   user_process_state_t state;
   u32 exit_code;
@@ -43,5 +45,11 @@ int run_user_test(void);
 void user_fault_current(void);
 
 int run_user_fault_test(void);
+void user_test_task_entry(void);
+void user_fault_task_entry(void);
+void user_process_dump(void);
+void user_process_reap(void);
+
+#define MAX_USER_PROCESSES 8
 
 #endif

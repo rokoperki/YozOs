@@ -39,6 +39,9 @@ static void cmd_append(char *a);
 static void cmd_rename(char *a);
 static void cmd_start_user_test(char *a);
 static void cmd_start_fault_user_test(char *a);
+static void cmd_tasks(char *a);
+static void cmd_reap(char *a);
+static void cmd_procs(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -61,6 +64,9 @@ static const command_t commands[] = {
     {"RENAME", cmd_rename, "<file> <name> rename file"},
     {"USERTEST", cmd_start_user_test, "test user mode"},
     {"USERFAULT", cmd_start_fault_user_test, "test fault user mode"},
+    {"TASKS", cmd_tasks, "list tasks"},
+    {"REAP", cmd_reap, "remove exited tasks"},
+    {"PROCS", cmd_procs, "list user processes"},
     {0, 0, 0},
 };
 
@@ -269,34 +275,72 @@ void user_input(char *input) {
     print("unknown command (try HELP)\n");
 }
 
-static void restore_kernel_segments(void) {
-  asm volatile("mov $0x10, %%ax\n"
-               "mov %%ax, %%ds\n"
-               "mov %%ax, %%es\n"
-               "mov %%ax, %%fs\n"
-               "mov %%ax, %%gs\n"
-               :
-               :
-               : "ax");
-}
+static task_t *user_test_task;
+static int user_test_started;
+static task_t *user_fault_task;
+static int user_fault_started;
 
-static void print_user_exit_code(int code) {
-  char buff[16];
-  int_to_ascii(code, buff);
-  print("exit code: ");
-  println(buff);
+static void reap_tasks(void) {
+  user_process_reap();
+  task_reap_exited();
+
+  if (user_test_started && user_test_task &&
+      task_get_state(user_test_task) == TASK_UNUSED) {
+    user_test_started = 0;
+    user_test_task = 0;
+  }
+  if (user_fault_started && user_fault_task &&
+      task_get_state(user_fault_task) == TASK_UNUSED) {
+    user_fault_started = 0;
+    user_fault_task = 0;
+  }
 }
 
 static void cmd_start_user_test(char *a) {
   UNUSED(a);
-  int code = run_user_test();
-  restore_kernel_segments();
-  print_user_exit_code(code);
+  reap_tasks();
+
+  if (user_test_started)
+    return;
+
+  task_t *task = spawn_task("user_test", user_test_task_entry);
+  if (!task) {
+    println("no task slot");
+    return;
+  }
+
+  user_test_started = 1;
+  user_test_task = task;
 }
 
 void cmd_start_fault_user_test(char *a) {
   UNUSED(a);
-  int code = run_user_fault_test();
-  restore_kernel_segments();
-  print_user_exit_code(code);
+  reap_tasks();
+
+  if (user_fault_started)
+    return;
+
+  task_t *task = spawn_task("user_fault", user_fault_task_entry);
+  if (!task) {
+    println("no task slot");
+    return;
+  }
+
+  user_fault_started = 1;
+  user_fault_task = task;
+}
+
+static void cmd_tasks(char *a) {
+  UNUSED(a);
+  task_dump();
+}
+
+static void cmd_reap(char *a) {
+  UNUSED(a);
+  reap_tasks();
+}
+
+static void cmd_procs(char *a) {
+  UNUSED(a);
+  user_process_dump();
 }

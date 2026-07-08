@@ -2,6 +2,7 @@
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
 #include "../memory/paging.h"
+#include "../task/task.h"
 #include "idt.h"
 #include "user_mode.h"
 
@@ -81,6 +82,7 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
   }
 
   if (num == SYS_YIELD) {
+    schedule();
     return 0;
   }
 

@@ -7,6 +7,7 @@
 #include "memory/frame_alloc.h"
 #include "memory/paging.h"
 #include "shell/shell.h"
+#include "task/task.h"
 
 int main() {
   clear_screen();
@@ -19,6 +20,7 @@ int main() {
   init_timer(50);
 
   init_frames();
+  scheduler_init();
   init_paging();
 
   fs_init();
