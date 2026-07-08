@@ -2,6 +2,7 @@
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
 #include "../fs/fat.h"
+#include "../kernel/mem.h"
 #include "../kernel/string.h"
 #include "../memory/paging.h"
 #include "../task/task.h"
@@ -16,6 +17,7 @@ static void prepare_user_program(user_program_t *program) {
 
 #define USER_KERNEL_STACK_SIZE 4096
 #define USER_PROCESS_NAME_LEN 16
+static u32 next_user_pid = 1;
 static user_process_t user_process_table[MAX_USER_PROCESSES];
 static char user_process_names[MAX_USER_PROCESSES][USER_PROCESS_NAME_LEN];
 
@@ -27,7 +29,11 @@ static user_program_t user_test_program;
 static user_region_t user_fault_regions[3];
 static user_program_t user_fault_program;
 static int builtin_user_programs_ready;
+static user_process_t *pending_user_test_process;
+static user_process_t *pending_user_fault_process;
 
+// Single-slot external loader: one FAT-loaded program may be prepared/running
+// at a time because all external binaries load at USER_LOAD_ADDR.
 static user_region_t loaded_user_regions[2];
 static user_program_t loaded_user_program;
 static user_process_t *loaded_user_process;
@@ -149,6 +155,11 @@ static int user_binary_header_ok(u8 *image, u32 loaded_len, u32 *entry) {
     return 0;
   }
 
+  if (image_size < USER_BIN_HEADER_SIZE || image_size > USER_LOAD_MAX_BYTES) {
+    println("bad user binary");
+    return 0;
+  }
+
   if (load_addr != USER_LOAD_ADDR || image_size != loaded_len ||
       entry_offset < USER_BIN_HEADER_SIZE || entry_offset >= loaded_len) {
     println("bad user binary");
@@ -192,6 +203,27 @@ static user_process_t *user_process_alloc() {
     }
   }
   return 0;
+}
+
+static void user_process_assign_pid(user_process_t *process) {
+  if (process->pid == 0)
+    process->pid = next_user_pid++;
+}
+
+static void user_process_clear(user_process_t *process) {
+  process->state = USER_PROCESS_UNUSED;
+  process->name = 0;
+  process->pid = 0;
+  process->task = 0;
+  process->program = 0;
+  process->exit_code = 0;
+
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    if (&user_process_table[i] == process) {
+      user_process_names[i][0] = '\0';
+      return;
+    }
+  }
 }
 
 static void user_process_set_name(user_process_t *process, char *name) {
@@ -272,10 +304,13 @@ static void init_user_test_process(user_process_t *process) {
 
   *process = (user_process_t){
       .name = "user_test",
+      .pid = 0,
+      .task = 0,
       .program = &user_test_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  user_process_assign_pid(process);
 }
 
 int run_user_test() {
@@ -286,26 +321,28 @@ int run_user_test() {
 }
 
 void user_test_task_entry() {
-  user_process_t *process = user_process_alloc();
+  user_process_t *process = pending_user_test_process;
+  pending_user_test_process = 0;
+
   if (!process) {
-    println("no process slots");
+    println("no user process");
     task_exit();
   }
 
-  init_user_test_process(process);
   run_user_process(process);
   print_user_process_status(process);
   task_exit();
 }
 
 void user_fault_task_entry(void) {
-  user_process_t *process = user_process_alloc();
+  user_process_t *process = pending_user_fault_process;
+  pending_user_fault_process = 0;
+
   if (!process) {
-    println("no process slots");
+    println("no user process");
     task_exit();
   }
 
-  init_user_fault_process(process);
   run_user_process(process);
   print_user_process_status(process);
   task_exit();
@@ -316,10 +353,13 @@ static void init_user_fault_process(user_process_t *process) {
 
   *process = (user_process_t){
       .name = "user_fault",
+      .pid = 0,
+      .task = 0,
       .program = &user_fault_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  user_process_assign_pid(process);
 }
 
 int run_user_fault_test(void) {
@@ -327,6 +367,60 @@ int run_user_fault_test(void) {
   init_user_fault_process(&process);
 
   return run_user_process(&process);
+}
+
+task_t *start_user_test_task(void) {
+  if (pending_user_test_process) {
+    println("user test busy");
+    return 0;
+  }
+
+  user_process_t *process = user_process_alloc();
+  if (!process) {
+    println("no process slots");
+    return 0;
+  }
+
+  init_user_test_process(process);
+  pending_user_test_process = process;
+
+  task_t *task = spawn_task(process->name, user_test_task_entry);
+  if (!task) {
+    println("no task slot");
+    pending_user_test_process = 0;
+    user_process_clear(process);
+    return 0;
+  }
+
+  process->task = task;
+  return task;
+}
+
+task_t *start_user_fault_task(void) {
+  if (pending_user_fault_process) {
+    println("user fault busy");
+    return 0;
+  }
+
+  user_process_t *process = user_process_alloc();
+  if (!process) {
+    println("no process slots");
+    return 0;
+  }
+
+  init_user_fault_process(process);
+  pending_user_fault_process = process;
+
+  task_t *task = spawn_task(process->name, user_fault_task_entry);
+  if (!task) {
+    println("no task slot");
+    pending_user_fault_process = 0;
+    user_process_clear(process);
+    return 0;
+  }
+
+  process->task = task;
+  return task;
 }
 
 void user_fault_current(void) {
@@ -344,11 +438,21 @@ void user_process_dump(void) {
 
     char buf[16];
 
+    int_to_ascii(p->pid, buf);
+    print(buf);
+    print(" ");
+
     print(p->name);
     print(" ");
 
     print(user_process_state_name(p->state));
     print(" ");
+
+    if (p->task) {
+      print(" task=");
+      int_to_ascii(task_get_id(p->task), buf);
+      print(buf);
+    }
 
     int_to_ascii(p->exit_code, buf);
     println(buf);
@@ -363,11 +467,7 @@ void user_process_reap(void) {
       continue;
 
     if (p->state == USER_PROCESS_EXITED || p->state == USER_PROCESS_FAILED) {
-      p->state = USER_PROCESS_UNUSED;
-      p->name = 0;
-      user_process_names[i][0] = '\0';
-      p->program = 0;
-      p->exit_code = 0;
+      user_process_clear(p);
     }
   }
 }
@@ -395,6 +495,7 @@ int run_user_file(char *name) {
     return -1;
   }
 
+  memory_set((u8 *)USER_LOAD_ADDR, 0, USER_LOAD_MAX_BYTES);
   if (!fat_read_file(name, (u8 *)USER_LOAD_ADDR, USER_LOAD_MAX_BYTES,
                      &loaded_len)) {
     return -1;
@@ -418,10 +519,13 @@ int run_user_file(char *name) {
 
   *process = (user_process_t){
       .name = 0,
+      .pid = 0,
+      .task = 0,
       .program = &loaded_user_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  user_process_assign_pid(process);
   user_process_set_name(process, name);
 
   loaded_user_process = process;
@@ -434,10 +538,14 @@ int run_user_file(char *name) {
     loaded_user_busy = 0;
     process->state = USER_PROCESS_UNUSED;
     process->name = 0;
+    process->pid = 0;
+    process->task = 0;
     process->program = 0;
     process->exit_code = 0;
     return -1;
   }
+
+  process->task = task;
 
   return 0;
 }

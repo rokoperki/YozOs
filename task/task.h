@@ -32,6 +32,7 @@ void add_task(task_t *t);
 void task_exit(void);
 void task_dump(void);
 void task_reap_exited(void);
+u32 task_get_id(task_t *t);
 
 task_state_t task_get_state(task_t *t);
 

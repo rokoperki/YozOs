@@ -72,6 +72,8 @@ void add_task(task_t *t) {
   last->next = t;
 }
 
+u32 task_get_id(task_t *t) { return t ? t->id : 0; }
+
 void create_task(task_t *t, const char *name, void (*entry)()) {
   u32 *stack = (u32 *)(alloc_frame() + FRAME_SIZE);
   *(--stack) = (u32)task_exit;

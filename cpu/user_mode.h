@@ -3,6 +3,8 @@
 
 #include "types.h"
 
+struct task;
+
 #define USER_STACK_TOP 0x80000
 #define USER_EXIT_FAULT 0xFFFFFFFE
 #define USER_LOAD_ADDR 0x70000
@@ -37,6 +39,8 @@ typedef struct {
 
 typedef struct {
   const char *name;
+  u32 pid;
+  struct task *task;
   user_program_t *program;
   user_process_state_t state;
   u32 exit_code;
@@ -54,6 +58,8 @@ int run_user_test(void);
 void user_fault_current(void);
 
 int run_user_fault_test(void);
+struct task *start_user_test_task(void);
+struct task *start_user_fault_task(void);
 void user_test_task_entry(void);
 void user_fault_task_entry(void);
 void user_process_dump(void);

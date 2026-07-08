@@ -112,11 +112,6 @@ static void cmd_ptest(char *a) {
   UNUSED(x);
 }
 
-static void cmd_tasktest(char *a) {
-  UNUSED(a);
-  test_task();
-}
-
 static void cmd_ident(char *a) {
   UNUSED(a);
   ata_identify();
@@ -305,9 +300,8 @@ static void cmd_start_user_test(char *a) {
   if (user_test_started)
     return;
 
-  task_t *task = spawn_task("user_test", user_test_task_entry);
+  task_t *task = start_user_test_task();
   if (!task) {
-    println("no task slot");
     return;
   }
 
@@ -322,14 +316,19 @@ void cmd_start_fault_user_test(char *a) {
   if (user_fault_started)
     return;
 
-  task_t *task = spawn_task("user_fault", user_fault_task_entry);
+  task_t *task = start_user_fault_task();
   if (!task) {
-    println("no task slot");
     return;
   }
 
   user_fault_started = 1;
   user_fault_task = task;
+}
+
+static void cmd_tasktest(char *a) {
+  UNUSED(a);
+  reap_tasks();
+  test_task();
 }
 
 static void cmd_tasks(char *a) {
@@ -353,5 +352,6 @@ static void cmd_run(char *a) {
     return;
   }
 
+  reap_tasks();
   run_user_file(a);
 }
