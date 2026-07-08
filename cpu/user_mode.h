@@ -5,6 +5,11 @@
 
 #define USER_STACK_TOP 0x80000
 #define USER_EXIT_FAULT 0xFFFFFFFE
+#define USER_LOAD_ADDR 0x70000
+#define USER_LOAD_MAX_BYTES 8192
+#define USER_BIN_MAGIC 0x315A4F59
+#define USER_BIN_HEADER_SIZE 16
+
 #define USER_REGION_READ 1
 #define USER_REGION_WRITE 2
 #define USER_REGION_EXEC 4
@@ -54,6 +59,7 @@ void user_fault_task_entry(void);
 void user_process_dump(void);
 void user_process_reap(void);
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
+int run_user_file(char *name);
 
 #define MAX_USER_PROCESSES 8
 

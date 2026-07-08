@@ -27,6 +27,7 @@ typedef struct {
 void fs_init(void);
 void fs_info(void);
 void fs_ls(void);
+int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len);
 void fs_cat(char *name);
 void fs_create(char *name);
 void fs_write(char *name, char *text);

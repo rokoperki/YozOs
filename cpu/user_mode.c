@@ -1,6 +1,7 @@
 #include "user_mode.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
+#include "../fs/fat.h"
 #include "../kernel/string.h"
 #include "../memory/paging.h"
 #include "../task/task.h"
@@ -14,7 +15,9 @@ static void prepare_user_program(user_program_t *program) {
 }
 
 #define USER_KERNEL_STACK_SIZE 4096
+#define USER_PROCESS_NAME_LEN 16
 static user_process_t user_process_table[MAX_USER_PROCESSES];
+static char user_process_names[MAX_USER_PROCESSES][USER_PROCESS_NAME_LEN];
 
 static u8 user_kernel_stack[USER_KERNEL_STACK_SIZE];
 static user_process_t *current_user_process;
@@ -25,7 +28,13 @@ static user_region_t user_fault_regions[3];
 static user_program_t user_fault_program;
 static int builtin_user_programs_ready;
 
+static user_region_t loaded_user_regions[2];
+static user_program_t loaded_user_program;
+static user_process_t *loaded_user_process;
+static int loaded_user_busy;
+
 static void init_user_fault_process(user_process_t *process);
+static void user_file_task_entry(void);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
   if (!current_user_process || !current_user_process->program)
@@ -119,6 +128,49 @@ static void init_builtin_user_programs(void) {
   builtin_user_programs_ready = 1;
 }
 
+static u32 read_u32(u8 *ptr) {
+  return ((u32)ptr[0]) | ((u32)ptr[1] << 8) | ((u32)ptr[2] << 16) |
+         ((u32)ptr[3] << 24);
+}
+
+static int user_binary_header_ok(u8 *image, u32 loaded_len, u32 *entry) {
+  if (loaded_len < USER_BIN_HEADER_SIZE) {
+    println("bad user binary");
+    return 0;
+  }
+
+  u32 magic = read_u32(image);
+  u32 load_addr = read_u32(image + 4);
+  u32 entry_offset = read_u32(image + 8);
+  u32 image_size = read_u32(image + 12);
+
+  if (magic != USER_BIN_MAGIC) {
+    println("bad user binary");
+    return 0;
+  }
+
+  if (load_addr != USER_LOAD_ADDR || image_size != loaded_len ||
+      entry_offset < USER_BIN_HEADER_SIZE || entry_offset >= loaded_len) {
+    println("bad user binary");
+    return 0;
+  }
+
+  *entry = USER_LOAD_ADDR + entry_offset;
+  return 1;
+}
+
+static void build_loaded_user_program(u32 loaded_len, u32 entry) {
+  user_region_set(&loaded_user_regions[0], USER_LOAD_ADDR, loaded_len,
+                  USER_REGION_READ | USER_REGION_WRITE | USER_REGION_EXEC);
+
+  user_region_set(&loaded_user_regions[1], USER_STACK_TOP - FRAME_SIZE,
+                  FRAME_SIZE, USER_REGION_READ | USER_REGION_WRITE);
+
+  user_program_set(
+      &loaded_user_program, entry, USER_STACK_TOP, loaded_user_regions,
+      sizeof(loaded_user_regions) / sizeof(loaded_user_regions[0]));
+}
+
 static void print_user_process_status(user_process_t *process) {
   char buff[16];
 
@@ -140,6 +192,24 @@ static user_process_t *user_process_alloc() {
     }
   }
   return 0;
+}
+
+static void user_process_set_name(user_process_t *process, char *name) {
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    if (&user_process_table[i] != process)
+      continue;
+
+    int j = 0;
+    while (j + 1 < USER_PROCESS_NAME_LEN && name[j]) {
+      user_process_names[i][j] = name[j];
+      j++;
+    }
+    user_process_names[i][j] = '\0';
+    process->name = user_process_names[i];
+    return;
+  }
+
+  process->name = name;
 }
 
 int run_user_program(user_program_t *program) {
@@ -295,8 +365,79 @@ void user_process_reap(void) {
     if (p->state == USER_PROCESS_EXITED || p->state == USER_PROCESS_FAILED) {
       p->state = USER_PROCESS_UNUSED;
       p->name = 0;
+      user_process_names[i][0] = '\0';
       p->program = 0;
       p->exit_code = 0;
     }
   }
+}
+
+static void user_file_task_entry(void) {
+  if (!loaded_user_process) {
+    loaded_user_busy = 0;
+    task_exit();
+  }
+
+  run_user_process(loaded_user_process);
+  print_user_process_status(loaded_user_process);
+
+  loaded_user_process = 0;
+  loaded_user_busy = 0;
+  task_exit();
+}
+
+int run_user_file(char *name) {
+  u32 loaded_len;
+  u32 entry;
+
+  if (loaded_user_busy) {
+    println("user loader busy");
+    return -1;
+  }
+
+  if (!fat_read_file(name, (u8 *)USER_LOAD_ADDR, USER_LOAD_MAX_BYTES,
+                     &loaded_len)) {
+    return -1;
+  }
+
+  if (loaded_len == 0) {
+    println("empty program");
+    return -1;
+  }
+
+  if (!user_binary_header_ok((u8 *)USER_LOAD_ADDR, loaded_len, &entry))
+    return -1;
+
+  build_loaded_user_program(loaded_len, entry);
+
+  user_process_t *process = user_process_alloc();
+  if (!process) {
+    println("no process slots");
+    return -1;
+  }
+
+  *process = (user_process_t){
+      .name = 0,
+      .program = &loaded_user_program,
+      .state = USER_PROCESS_READY,
+      .exit_code = 0,
+  };
+  user_process_set_name(process, name);
+
+  loaded_user_process = process;
+  loaded_user_busy = 1;
+
+  task_t *task = spawn_task(process->name, user_file_task_entry);
+  if (!task) {
+    println("no task slot");
+    loaded_user_process = 0;
+    loaded_user_busy = 0;
+    process->state = USER_PROCESS_UNUSED;
+    process->name = 0;
+    process->program = 0;
+    process->exit_code = 0;
+    return -1;
+  }
+
+  return 0;
 }

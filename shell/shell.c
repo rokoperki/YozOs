@@ -42,6 +42,7 @@ static void cmd_start_fault_user_test(char *a);
 static void cmd_tasks(char *a);
 static void cmd_reap(char *a);
 static void cmd_procs(char *a);
+static void cmd_run(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -67,6 +68,7 @@ static const command_t commands[] = {
     {"TASKS", cmd_tasks, "list tasks"},
     {"REAP", cmd_reap, "remove exited tasks"},
     {"PROCS", cmd_procs, "list user processes"},
+    {"RUN", cmd_run, "<file> run flat user binary"},
     {0, 0, 0},
 };
 
@@ -343,4 +345,13 @@ static void cmd_reap(char *a) {
 static void cmd_procs(char *a) {
   UNUSED(a);
   user_process_dump();
+}
+
+static void cmd_run(char *a) {
+  if (strcmp(a, " ") == 0 || strlen(a) == 0) {
+    println("usage: RUN <file>");
+    return;
+  }
+
+  run_user_file(a);
 }

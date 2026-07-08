@@ -17,7 +17,7 @@ Done so far:
   publishes completed lines; the kernel main loop dispatches shell commands
   outside interrupt context. The table-driven `yozOS >` shell supports `HELP`,
   `END`, `MMAP`, `FALLOC`, `PTEST`, `TASKTEST`, `TASKS`, `REAP`, `PROCS`,
-  `USERTEST`, `USERFAULT`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
+  `USERTEST`, `USERFAULT`, `RUN <file>`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
   `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `WRITEPAT <file>
   <size>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
@@ -51,8 +51,11 @@ Done so far:
   and `USERFAULT` now run as scheduler-owned kernel tasks that enter ring 3,
   report async exit/fault status, and are tracked in a small user-process table
   visible through `PROCS`. Built-in user tests are described through
-  loader-shaped `user_program_t` descriptors, keeping the next FAT-backed flat
-  binary loader focused on producing the same descriptor shape.
+  loader-shaped `user_program_t` descriptors. `RUN <file>` loads a headered
+  `YOZ1` flat binary from the FAT16 data disk into a fixed user address
+  (`0x70000`), validates its magic/load address/entry/size, builds a
+  `user_program_t`, and enters it in ring 3. External test programs now cover
+  output (`HELLO.BIN`), input (`ECHO.BIN`), and user fault handling (`FAULT.BIN`).
 
 ## Layout
 
@@ -67,6 +70,8 @@ Done so far:
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
 | `fs/`      | FAT16: `fat.c` (BPB parse, root-dir list/read/create/write/append/delete/rename; 8.3 names, 8 KiB files)           |
 | `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
+| `user/`    | External `YOZ1` flat user binaries: `HELLO.BIN`, `ECHO.BIN`, and `FAULT.BIN`                                      |
+| `tools/`   | Host-side helper scripts, including a small FAT16 image installer for test binaries                                |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
 ## Toolchain
@@ -82,6 +87,9 @@ register constraints that fail under host Clang.
 
 ```bash
 make            # build bootable image (os-image.bin)
+make user-programs  # build external flat user binaries
+make install-user-programs  # copy user binaries into disk.img
+make prepare-user-disk  # build image + install all user binaries
 make run        # build + boot in QEMU
 make run-disk   # boot in QEMU with a FAT16 data disk (disk.img) attached as IDE
 make usb        # flash image to a USB stick (see below)
@@ -92,6 +100,21 @@ make clean      # remove build artifacts
 sectors 1+ contain the kernel, and the rest is zero-padded. `make` computes the
 linked kernel sector count, writes it to `boot/kernel_sectors.inc`, and fails if
 the image would exceed the boot loader's one-byte sector count.
+
+To test the external userspace path:
+
+```bash
+make prepare-user-disk
+make run-disk
+```
+
+Then run this in the YozOs shell:
+
+```text
+RUN HELLO.BIN
+RUN ECHO.BIN
+RUN FAULT.BIN
+```
 
 ## Booting on real hardware
 

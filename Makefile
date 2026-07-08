@@ -9,6 +9,7 @@ OBJDUMP := i686-elf-objdump
 OBJCOPY := i686-elf-objcopy
 ASM     := nasm
 QEMU    := qemu-system-i386
+PYTHON  := python3
 
 # Freestanding kernel code (no host libc / startup files).
 CFLAGS  := -ffreestanding -fno-pie -Wall -Wextra
@@ -99,6 +100,33 @@ DISK_IMG := disk.img
 $(DISK_IMG):
 	dd if=/dev/zero of=$@ bs=512 count=2048 2>/dev/null
 
+# --- User programs ----------------------------------------------------------
+USER_HELLO_BIN := user/HELLO.BIN
+USER_ECHO_BIN  := user/ECHO.BIN
+USER_FAULT_BIN := user/FAULT.BIN
+USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN)
+
+$(USER_HELLO_BIN): user/hello.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_ECHO_BIN): user/echo.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_FAULT_BIN): user/fault.asm
+	$(ASM) $< -f bin -o $@
+
+user-programs: $(USER_BINS)
+
+install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) HELLO.BIN
+
+install-user-programs: $(DISK_IMG) $(USER_BINS)
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) HELLO.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHO_BIN) ECHO.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_FAULT_BIN) FAULT.BIN
+
+prepare-user-disk: $(OS_IMAGE) install-user-programs
+
 # --- Run --------------------------------------------------------------------
 run: $(OS_IMAGE)
 	$(QEMU) -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy
@@ -131,7 +159,7 @@ usb: $(OS_IMAGE)
 	diskutil eject $(DISK)
 
 # --- Phony ------------------------------------------------------------------
-.PHONY: all boot basic kernel image run run-disk run-boot usb disasm-boot disasm-basic disasm-kernel clean
+.PHONY: all boot basic kernel image run run-disk run-boot usb user-programs install-hello install-user-programs prepare-user-disk disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 	@printf ">>> %s built: %s bytes (%s KiB)\n" "$(OS_IMAGE)" \
 	  "$$(stat -f%z $(OS_IMAGE))" "$$(( $$(stat -f%z $(OS_IMAGE)) / 1024 ))"
@@ -142,4 +170,5 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) $(OS_IMAGE)
+	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) \
+	      $(OS_IMAGE) $(USER_BINS)

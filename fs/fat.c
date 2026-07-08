@@ -207,11 +207,14 @@ u16 fat_entry(u32 cluster) {
   return buff[(off % 512) / 2];
 }
 
-void fs_cat(char *name) {
+int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
   char target[11];
 
+  if (out_len)
+    *out_len = 0;
+
   if (!require_valid_name(name))
-    return;
+    return 0;
 
   name_to_83(name, target);
 
@@ -220,7 +223,7 @@ void fs_cat(char *name) {
 
   if (!dir_find(target, &dir_lba, &idx)) {
     println("file not found");
-    return;
+    return 0;
   }
 
   u16 dir_buff[256];
@@ -229,8 +232,15 @@ void fs_cat(char *name) {
 
   u16 first_cluster = e[idx].first_cluster;
   u32 size = e[idx].size;
+
+  if (size > max_len) {
+    println("file too big");
+    return 0;
+  }
+
   u16 cluster = first_cluster;
   u32 remaining = size;
+  u32 copied = 0;
   u16 buff[256]; // one sector
 
   while (cluster < 0xFFF8 && remaining > 0) {
@@ -240,11 +250,29 @@ void fs_cat(char *name) {
       char *bytes = (char *)buff;
       u32 n = remaining < 512 ? remaining : 512;
       for (u32 j = 0; j < n; j++)
-        print_char(bytes[j], -1, -1, 0);
+        dst[copied + j] = bytes[j];
+      copied += n;
       remaining -= n;
     }
     cluster = fat_entry(cluster);
   }
+
+  if (out_len)
+    *out_len = copied;
+
+  return remaining == 0;
+}
+
+void fs_cat(char *name) {
+  static u8 cat_buf[MAX_FILE_BYTES];
+  u32 len;
+
+  if (!fat_read_file(name, cat_buf, MAX_FILE_BYTES, &len))
+    return;
+
+  for (u32 i = 0; i < len; i++)
+    print_char(cat_buf[i], -1, -1, 0);
+
   println("");
 }
 
