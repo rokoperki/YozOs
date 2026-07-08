@@ -16,15 +16,19 @@ Done so far:
 - **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer and
   publishes completed lines; the kernel main loop dispatches shell commands
   outside interrupt context. The table-driven `yozOS >` shell supports `HELP`,
-  `END`, `MMAP`, `FALLOC`, `PTEST`, `TASKTEST`, `IDENT`, `RSECT`, `WSECT`,
-  `FSINFO`, `LS`, `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`,
-  `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
+  `END`, `MMAP`, `FALLOC`, `PTEST`, `TASKTEST`, `TASKS`, `REAP`, `PROCS`,
+  `USERTEST`, `USERFAULT`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
+  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `WRITEPAT <file>
+  <size>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
 - **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
   the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
   `CR2` address; `PTEST` proves the MMU is live.
 - **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
-  switching driven off the timer IRQ (`TASKTEST`).
+  switching driven off the timer IRQ. The scheduler now has a boot-time
+  main/idle task model, task states, a fixed task table, `spawn_task()`, exited
+  task reaping, and debug shell commands (`TASKS`, `REAP`). `TASKTEST` is a
+  finite rerunnable scheduler smoke test.
 - **Disk + filesystem** — ATA PIO (LBA28) driver: `IDENTIFY`, sector read/write
   (`IDENT`/`RSECT`/`WSECT`). On top of it, a FAT16 driver parses the BPB
   (`FSINFO`), lists the root directory (`LS`), reads files by name
@@ -36,12 +40,19 @@ Done so far:
   code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
   switching, enters linked-in user programs with `iret`, and handles `int 0x80`
   syscalls: `SYS_WRITE_CHAR`, `SYS_STRING_WRITE`, `SYS_WRITE_BUFFER`,
-  `SYS_READ_LINE`, and `SYS_EXIT`. Kernel pages are supervisor-only by default;
-  linked-in user code/data/stack regions are explicitly marked `PAGE_USER`, and
-  syscall pointer arguments are validated by walking page tables. Keyboard input
-  has shell/user ownership so `SYS_READ_LINE` can read a line while the shell is
-  not consuming it. The linked-in user test prints, rejects a bad pointer, reads
-  a line, echoes it, exits, and returns cleanly to the shell.
+  `SYS_READ_LINE`, `SYS_EXIT`, and `SYS_YIELD`. The syscall stub saves/restores
+  user register and segment state, switches to kernel data segments for the C
+  handler, and returns values through the interrupted user's `eax`. Kernel pages
+  are supervisor-only by default; linked-in user code/data/stack regions are
+  explicitly marked `PAGE_USER` and carry read/write/execute permissions.
+  Syscall pointer arguments are validated against both page-table user bits and
+  declared region permissions. Keyboard input has shell/user ownership so
+  `SYS_READ_LINE` can read a line while the shell is not consuming it. `USERTEST`
+  and `USERFAULT` now run as scheduler-owned kernel tasks that enter ring 3,
+  report async exit/fault status, and are tracked in a small user-process table
+  visible through `PROCS`. Built-in user tests are described through
+  loader-shaped `user_program_t` descriptors, keeping the next FAT-backed flat
+  binary loader focused on producing the same descriptor shape.
 
 ## Layout
 
@@ -78,10 +89,9 @@ make clean      # remove build artifacts
 ```
 
 `os-image.bin` is a 1.44 MB raw floppy image: sector 0 is the boot sector,
-sectors 1+ contain the kernel, and the rest is zero-padded. The boot loader
-currently reads 80 kernel sectors from the floppy into memory at physical
-`0x10000`. `make` prints the linked kernel size and sector count and fails if it
-exceeds the boot loader read count.
+sectors 1+ contain the kernel, and the rest is zero-padded. `make` computes the
+linked kernel sector count, writes it to `boot/kernel_sectors.inc`, and fails if
+the image would exceed the boot loader's one-byte sector count.
 
 ## Booting on real hardware
 

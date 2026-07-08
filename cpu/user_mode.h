@@ -5,10 +5,14 @@
 
 #define USER_STACK_TOP 0x80000
 #define USER_EXIT_FAULT 0xFFFFFFFE
+#define USER_REGION_READ 1
+#define USER_REGION_WRITE 2
+#define USER_REGION_EXEC 4
 
 typedef struct {
   u32 start;
   u32 len;
+  u32 flags;
 } user_region_t;
 
 typedef enum {
@@ -49,6 +53,7 @@ void user_test_task_entry(void);
 void user_fault_task_entry(void);
 void user_process_dump(void);
 void user_process_reap(void);
+int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
 
 #define MAX_USER_PROCESSES 8
 

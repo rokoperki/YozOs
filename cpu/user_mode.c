@@ -27,44 +27,94 @@ static int builtin_user_programs_ready;
 
 static void init_user_fault_process(user_process_t *process);
 
+int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
+  if (!current_user_process || !current_user_process->program)
+    return 0;
+
+  if (!user_pages_ok(ptr, len))
+    return 0;
+
+  if (len == 0)
+    return 1;
+
+  u32 end = ptr + len - 1;
+  if (end < ptr)
+    return 0;
+
+  user_program_t *program = current_user_process->program;
+
+  for (u32 i = 0; i < program->region_count; i++) {
+    user_region_t *region = &program->regions[i];
+    u32 region_end = region->start + region->len - 1;
+
+    if (region->len == 0 || region_end < region->start)
+      continue;
+
+    if (ptr >= region->start && end <= region_end &&
+        (region->flags & required_flags) == required_flags) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
+static void user_program_set(user_program_t *program, u32 entry, u32 stack_top,
+                             user_region_t *regions, u32 region_count) {
+  program->entry = entry;
+  program->stack_top = stack_top;
+  program->regions = regions;
+  program->region_count = region_count;
+}
+
+static void user_region_set(user_region_t *region, u32 start, u32 len,
+                            u32 flags) {
+  region->start = start;
+  region->len = len;
+  region->flags = flags;
+}
+
+static void build_builtin_user_test_program(void) {
+  user_region_set(&user_test_regions[0], (u32)user_test_main, FRAME_SIZE,
+                  USER_REGION_READ | USER_REGION_EXEC);
+  user_region_set(&user_test_regions[1], (u32)user_test_msg, user_test_msg_len,
+                  USER_REGION_READ);
+  user_region_set(&user_test_regions[2], (u32)user_test_bad_ptr_msg,
+                  user_test_bad_ptr_msg_len, USER_REGION_READ);
+  user_region_set(&user_test_regions[3], (u32)user_test_input_buf,
+                  user_test_input_buf_len,
+                  USER_REGION_READ | USER_REGION_WRITE);
+  user_region_set(&user_test_regions[4], (u32)user_test_prompt,
+                  user_test_prompt_len, USER_REGION_READ);
+  user_region_set(&user_test_regions[5], (u32)user_test_got_msg,
+                  user_test_got_msg_len, USER_REGION_READ);
+  user_region_set(&user_test_regions[6], USER_STACK_TOP - FRAME_SIZE,
+                  FRAME_SIZE, USER_REGION_READ | USER_REGION_WRITE);
+
+  user_program_set(&user_test_program, (u32)user_test_main, USER_STACK_TOP,
+                   user_test_regions,
+                   sizeof(user_test_regions) / sizeof(user_test_regions[0]));
+}
+
+static void build_builtin_user_fault_program(void) {
+  user_region_set(&user_fault_regions[0], (u32)user_fault_test_main, FRAME_SIZE,
+                  USER_REGION_READ | USER_REGION_EXEC);
+  user_region_set(&user_fault_regions[1], (u32)user_fault_test_msg,
+                  user_fault_test_len, USER_REGION_READ);
+  user_region_set(&user_fault_regions[2], USER_STACK_TOP - FRAME_SIZE,
+                  FRAME_SIZE, USER_REGION_READ | USER_REGION_WRITE);
+
+  user_program_set(&user_fault_program, (u32)user_fault_test_main,
+                   USER_STACK_TOP, user_fault_regions,
+                   sizeof(user_fault_regions) / sizeof(user_fault_regions[0]));
+}
+
 static void init_builtin_user_programs(void) {
   if (builtin_user_programs_ready)
     return;
 
-  user_test_regions[0] = (user_region_t){(u32)user_test_main, FRAME_SIZE};
-  user_test_regions[1] = (user_region_t){(u32)user_test_msg, user_test_msg_len};
-  user_test_regions[2] =
-      (user_region_t){(u32)user_test_bad_ptr_msg, user_test_bad_ptr_msg_len};
-  user_test_regions[3] =
-      (user_region_t){(u32)user_test_input_buf, user_test_input_buf_len};
-  user_test_regions[4] =
-      (user_region_t){(u32)user_test_prompt, user_test_prompt_len};
-  user_test_regions[5] =
-      (user_region_t){(u32)user_test_got_msg, user_test_got_msg_len};
-  user_test_regions[6] =
-      (user_region_t){USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE};
-
-  user_test_program = (user_program_t){
-      .entry = (u32)user_test_main,
-      .stack_top = USER_STACK_TOP,
-      .regions = user_test_regions,
-      .region_count = sizeof(user_test_regions) / sizeof(user_test_regions[0]),
-  };
-
-  user_fault_regions[0] =
-      (user_region_t){(u32)user_fault_test_main, FRAME_SIZE};
-  user_fault_regions[1] =
-      (user_region_t){(u32)user_fault_test_msg, user_fault_test_len};
-  user_fault_regions[2] =
-      (user_region_t){USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE};
-
-  user_fault_program = (user_program_t){
-      .entry = (u32)user_fault_test_main,
-      .stack_top = USER_STACK_TOP,
-      .regions = user_fault_regions,
-      .region_count =
-          sizeof(user_fault_regions) / sizeof(user_fault_regions[0]),
-  };
+  build_builtin_user_test_program();
+  build_builtin_user_fault_program();
 
   builtin_user_programs_ready = 1;
 }
