@@ -33,6 +33,7 @@ void task_exit(void);
 void task_dump(void);
 void task_reap_exited(void);
 u32 task_get_id(task_t *t);
+int task_kill(task_t *task);
 
 task_state_t task_get_state(task_t *t);
 

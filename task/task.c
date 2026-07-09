@@ -258,3 +258,17 @@ task_t *spawn_task(const char *name, void (*entry)()) {
   add_task(task);
   return task;
 }
+
+int task_kill(task_t *task) {
+  if (task == 0)
+    return 0;
+  if (task == current)
+    return 0;
+
+  if (task->state == TASK_EXITED || task->state == TASK_UNUSED)
+    return 0;
+
+  task->state = TASK_EXITED;
+
+  return 1;
+}

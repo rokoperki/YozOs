@@ -104,7 +104,8 @@ $(DISK_IMG):
 USER_HELLO_BIN := user/HELLO.BIN
 USER_ECHO_BIN  := user/ECHO.BIN
 USER_FAULT_BIN := user/FAULT.BIN
-USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN)
+USER_PID_BIN := user/PID.BIN
+USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN)
 
 $(USER_HELLO_BIN): user/hello.asm
 	$(ASM) $< -f bin -o $@
@@ -115,6 +116,9 @@ $(USER_ECHO_BIN): user/echo.asm
 $(USER_FAULT_BIN): user/fault.asm
 	$(ASM) $< -f bin -o $@
 
+$(USER_PID_BIN): user/pid.asm 
+		$(ASM) $< -f bin -o $@
+
 user-programs: $(USER_BINS)
 
 install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
@@ -124,6 +128,7 @@ install-user-programs: $(DISK_IMG) $(USER_BINS)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) HELLO.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHO_BIN) ECHO.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_FAULT_BIN) FAULT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PID_BIN) PID.BIN
 
 prepare-user-disk: $(OS_IMAGE) install-user-programs
 

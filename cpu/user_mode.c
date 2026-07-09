@@ -74,6 +74,12 @@ int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
   return 0;
 }
 
+static int user_process_is_dead(user_process_t *process) {
+  return process->state == USER_PROCESS_EXITED ||
+         process->state == USER_PROCESS_FAILED ||
+         process->state == USER_PROCESS_KILLED;
+}
+
 static void user_program_set(user_program_t *program, u32 entry, u32 stack_top,
                              user_region_t *regions, u32 region_count) {
   program->entry = entry;
@@ -274,6 +280,8 @@ static const char *user_process_state_name(user_process_state_t state) {
     return "EXITED";
   if (state == USER_PROCESS_FAILED)
     return "FAILED";
+  if (state == USER_PROCESS_KILLED)
+    return "KILLED";
   return "?";
 }
 
@@ -454,6 +462,7 @@ void user_process_dump(void) {
       print(buf);
     }
 
+    print(" exit_code= ");
     int_to_ascii(p->exit_code, buf);
     println(buf);
   }
@@ -466,10 +475,131 @@ void user_process_reap(void) {
     if (p == current_user_process)
       continue;
 
-    if (p->state == USER_PROCESS_EXITED || p->state == USER_PROCESS_FAILED) {
+    if (user_process_is_dead(p)) {
       user_process_clear(p);
     }
   }
+}
+
+int user_process_reap_pid(u32 pid) {
+  user_process_t *p;
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    if (user_process_table[i].state == USER_PROCESS_UNUSED) {
+      continue;
+    }
+
+    if (user_process_table[i].pid != pid) {
+      continue;
+    }
+
+    p = &user_process_table[i];
+
+    if (p == current_user_process) {
+      println("process is still running");
+      return USER_REAP_RUNNING;
+    }
+
+    if (user_process_is_dead(p)) {
+      user_process_clear(p);
+      return USER_REAP_OK;
+    }
+
+    println("process is still running");
+    return USER_REAP_RUNNING;
+  }
+  println("no such process");
+  return USER_REAP_NOT_FOUND;
+}
+
+int user_process_kill_pid(u32 pid) {
+  user_process_t *p;
+
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    if (user_process_table[i].state == USER_PROCESS_UNUSED) {
+      continue;
+    }
+
+    if (user_process_table[i].pid != pid) {
+      continue;
+    }
+
+    p = &user_process_table[i];
+
+    if (user_process_is_dead(p)) {
+      println("process already dead");
+      return USER_KILL_DEAD;
+    }
+
+    if (p->task == 0) {
+      println("process has no task");
+      return USER_KILL_NO_TASK;
+    }
+
+    if (task_kill(p->task) == 0) {
+      println("could not kill task");
+      return USER_KILL_NO_TASK;
+    }
+
+    if (p == loaded_user_process) {
+      loaded_user_process = 0;
+      loaded_user_busy = 0;
+    }
+
+    p->state = USER_PROCESS_KILLED;
+    p->exit_code = USER_EXIT_KILLED;
+    println("process killed");
+    return USER_KILL_OK;
+  }
+  println("no such process");
+  return USER_KILL_NOT_FOUND;
+}
+
+int user_process_wait_pid(u32 pid) {
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    user_process_t *p = &user_process_table[i];
+
+    if (p->state == USER_PROCESS_UNUSED)
+      continue;
+
+    if (p->pid != pid)
+      continue;
+
+    char buf[16];
+
+    if (p->state == USER_PROCESS_EXITED) {
+      print("process exited: ");
+      int_to_ascii(p->exit_code, buf);
+      println(buf);
+      return USER_WAIT_OK;
+    }
+
+    if (p->state == USER_PROCESS_FAILED) {
+      print("process failed: ");
+      int_to_ascii(p->exit_code, buf);
+      println(buf);
+      return USER_WAIT_OK;
+    }
+
+    if (p->state == USER_PROCESS_KILLED) {
+      print("process killed: ");
+      int_to_ascii(p->exit_code, buf);
+      println(buf);
+      return USER_WAIT_OK;
+    }
+
+    println("process still running");
+    return USER_WAIT_RUNNING;
+  }
+
+  println("no such process");
+  return USER_WAIT_NOT_FOUND;
+}
+
+u32 user_current_pid() {
+  if (current_user_process == 0)
+    return 0;
+
+  return current_user_process->pid;
 }
 
 static void user_file_task_entry(void) {

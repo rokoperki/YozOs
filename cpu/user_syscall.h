@@ -9,5 +9,6 @@ u32 user_write_string(char *str);
 u32 user_write_buffer(char *buff, u32 len);
 void user_exit(u32 code);
 u32 user_yield(void);
+u32 sys_getpid(void);
 
 #endif

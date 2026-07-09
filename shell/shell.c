@@ -43,6 +43,8 @@ static void cmd_tasks(char *a);
 static void cmd_reap(char *a);
 static void cmd_procs(char *a);
 static void cmd_run(char *a);
+static void cmd_kill(char *a);
+static void cmd_wait(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -66,9 +68,11 @@ static const command_t commands[] = {
     {"USERTEST", cmd_start_user_test, "test user mode"},
     {"USERFAULT", cmd_start_fault_user_test, "test fault user mode"},
     {"TASKS", cmd_tasks, "list tasks"},
-    {"REAP", cmd_reap, "remove exited tasks"},
+    {"REAP", cmd_reap, "[pid] remove exited process/tasks"},
     {"PROCS", cmd_procs, "list user processes"},
     {"RUN", cmd_run, "<file> run flat user binary"},
+    {"KILL", cmd_kill, "<pid> kill process"},
+    {"WAIT", cmd_wait, "<pid> show process exit status"},
     {0, 0, 0},
 };
 
@@ -277,10 +281,7 @@ static int user_test_started;
 static task_t *user_fault_task;
 static int user_fault_started;
 
-static void reap_tasks(void) {
-  user_process_reap();
-  task_reap_exited();
-
+static void refresh_reaped_builtin_tasks(void) {
   if (user_test_started && user_test_task &&
       task_get_state(user_test_task) == TASK_UNUSED) {
     user_test_started = 0;
@@ -291,6 +292,12 @@ static void reap_tasks(void) {
     user_fault_started = 0;
     user_fault_task = 0;
   }
+}
+
+static void reap_tasks(void) {
+  user_process_reap();
+  task_reap_exited();
+  refresh_reaped_builtin_tasks();
 }
 
 static void cmd_start_user_test(char *a) {
@@ -337,13 +344,55 @@ static void cmd_tasks(char *a) {
 }
 
 static void cmd_reap(char *a) {
-  UNUSED(a);
-  reap_tasks();
+  if (strcmp(a, " ") == 0 || strlen(a) == 0) {
+    reap_tasks();
+    return;
+  }
+  u32 out;
+  if (!parse_u32(a, &out)) {
+    println("usage: REAP [pid]");
+    return;
+  }
+
+  user_process_reap_pid(out);
+  task_reap_exited();
+  refresh_reaped_builtin_tasks();
 }
 
 static void cmd_procs(char *a) {
   UNUSED(a);
   user_process_dump();
+}
+
+static void cmd_kill(char *a) {
+  if (strcmp(a, " ") == 0 || strlen(a) == 0) {
+    println("usage: KILL <pid>");
+    return;
+  }
+
+  u32 pid;
+  if (!parse_u32(a, &pid)) {
+    println("usage: KILL <pid>");
+    return;
+  }
+  user_process_kill_pid(pid);
+  task_reap_exited();
+  refresh_reaped_builtin_tasks();
+}
+
+static void cmd_wait(char *a) {
+  if (strcmp(a, " ") == 0 || strlen(a) == 0) {
+    println("usage: WAIT <pid>");
+    return;
+  }
+
+  u32 pid;
+  if (!parse_u32(a, &pid)) {
+    println("usage: WAIT <pid>");
+    return;
+  }
+
+  user_process_wait_pid(pid);
 }
 
 static void cmd_run(char *a) {

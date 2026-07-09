@@ -7,6 +7,7 @@ struct task;
 
 #define USER_STACK_TOP 0x80000
 #define USER_EXIT_FAULT 0xFFFFFFFE
+#define USER_EXIT_KILLED 0xFFFFFFFD
 #define USER_LOAD_ADDR 0x70000
 #define USER_LOAD_MAX_BYTES 8192
 #define USER_BIN_MAGIC 0x315A4F59
@@ -15,6 +16,19 @@ struct task;
 #define USER_REGION_READ 1
 #define USER_REGION_WRITE 2
 #define USER_REGION_EXEC 4
+
+#define USER_REAP_OK 1
+#define USER_REAP_NOT_FOUND 0
+#define USER_REAP_RUNNING -1
+
+#define USER_KILL_OK 1
+#define USER_KILL_NOT_FOUND 0
+#define USER_KILL_DEAD -1
+#define USER_KILL_NO_TASK -2
+
+#define USER_WAIT_OK 1
+#define USER_WAIT_NOT_FOUND 0
+#define USER_WAIT_RUNNING -1
 
 typedef struct {
   u32 start;
@@ -28,6 +42,7 @@ typedef enum {
   USER_PROCESS_RUNNING,
   USER_PROCESS_EXITED,
   USER_PROCESS_FAILED,
+  USER_PROCESS_KILLED,
 } user_process_state_t;
 
 typedef struct {
@@ -64,6 +79,11 @@ void user_test_task_entry(void);
 void user_fault_task_entry(void);
 void user_process_dump(void);
 void user_process_reap(void);
+int user_process_reap_pid(u32 pid);
+int user_process_kill_pid(u32 pid);
+u32 user_current_pid(void);
+int user_process_wait_pid(u32 pid);
+
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
 int run_user_file(char *name);
 
