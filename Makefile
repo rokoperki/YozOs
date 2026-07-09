@@ -12,7 +12,7 @@ QEMU    := qemu-system-i386
 PYTHON  := python3
 
 # Freestanding kernel code (no host libc / startup files).
-CFLAGS  := -ffreestanding -fno-pie -Wall -Wextra
+CFLAGS  := -ffreestanding -fno-pie -Wall -Wextra -MMD -MP
 LDFLAGS :=
 
 # --- Boot sector ------------------------------------------------------------
@@ -52,6 +52,7 @@ disasm-boot: $(BOOT_BIN)
 # basic.c is standalone scratch and is deliberately NOT in this list.
 C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c) $(wildcard fs/*.c) $(wildcard shell/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
+DEPS      := $(OBJ:.o=.d)
 
 # Standalone assembly linked into the kernel (NOT %include'd into the boot
 # sector). cpu/interupt.asm references `extern isr_handler`, so it must be ELF.
@@ -155,7 +156,8 @@ run: $(OS_IMAGE)
 # disk first; a FAT-formatted disk.img has a boot sector that just prints
 # "This is not a bootable disk" and never falls through to the floppy.
 run-disk: $(OS_IMAGE) $(DISK_IMG)
-	$(QEMU) -boot order=a \
+	$(QEMU) -display cocoa,zoom-to-fit=on,full-screen=off \
+	        -boot order=a \
 	        -drive format=raw,file=$(OS_IMAGE),index=0,if=floppy \
 	        -drive format=raw,file=$(DISK_IMG),if=ide,index=0
 
@@ -179,6 +181,8 @@ usb: $(OS_IMAGE)
 	diskutil eject $(DISK)
 
 # --- Phony ------------------------------------------------------------------
+-include $(DEPS)
+
 .PHONY: all boot basic kernel image run run-disk run-boot usb user-programs install-hello install-user-programs prepare-user-disk disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 	@printf ">>> %s built: %s bytes (%s KiB)\n" "$(OS_IMAGE)" \
@@ -190,5 +194,5 @@ image: $(OS_IMAGE)
 
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
-	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(ASM_OBJ) \
+	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(DEPS) $(ASM_OBJ) \
 	      $(OS_IMAGE) $(USER_BINS)

@@ -21,6 +21,13 @@ static u32 next_user_pid = 1;
 static user_process_t user_process_table[MAX_USER_PROCESSES];
 static char user_process_names[MAX_USER_PROCESSES][USER_PROCESS_NAME_LEN];
 
+// Process lifecycle:
+// UNUSED -> READY -> RUNNING -> EXITED/FAILED/KILLED -> reaped to UNUSED.
+//
+// task_t owns scheduler execution state. user_process_t owns process identity,
+// parent metadata, status, and exit accounting. For now, user processes and
+// tasks are separate but linked one-to-one while the process is active.
+
 static u8 user_kernel_stack[USER_KERNEL_STACK_SIZE];
 static user_process_t *current_user_process;
 
@@ -78,6 +85,21 @@ static int user_process_is_dead(user_process_t *process) {
   return process->state == USER_PROCESS_EXITED ||
          process->state == USER_PROCESS_FAILED ||
          process->state == USER_PROCESS_KILLED;
+}
+
+static void user_process_mark_exited(user_process_t *process, u32 code) {
+  process->state = USER_PROCESS_EXITED;
+  process->exit_code = code;
+}
+
+static void user_process_mark_failed(user_process_t *process, u32 code) {
+  process->state = USER_PROCESS_FAILED;
+  process->exit_code = code;
+}
+
+static void user_process_mark_killed(user_process_t *process) {
+  process->state = USER_PROCESS_KILLED;
+  process->exit_code = USER_EXIT_KILLED;
 }
 
 static void user_program_set(user_program_t *program, u32 entry, u32 stack_top,
@@ -309,12 +331,11 @@ int run_user_process(user_process_t *process) {
   int code = run_user_program(process->program);
 
   if ((u32)code == USER_EXIT_FAULT) {
-    process->state = USER_PROCESS_FAILED;
+    user_process_mark_failed(process, USER_EXIT_FAULT);
   } else {
-    process->state = USER_PROCESS_EXITED;
+    user_process_mark_exited(process, (u32)code);
   }
 
-  process->exit_code = code;
   current_user_process = 0;
 
   return code;
@@ -447,7 +468,7 @@ task_t *start_user_fault_task(void) {
 
 void user_fault_current(void) {
   if (current_user_process)
-    current_user_process->state = USER_PROCESS_FAILED;
+    user_process_mark_failed(current_user_process, USER_EXIT_FAULT);
   user_context_restore(USER_EXIT_FAULT + 1);
 }
 
@@ -550,8 +571,7 @@ int user_process_kill_pid(u32 pid) {
     loaded_user_busy = 0;
   }
 
-  p->state = USER_PROCESS_KILLED;
-  p->exit_code = USER_EXIT_KILLED;
+  user_process_mark_killed(p);
   println("process killed");
   return USER_KILL_OK;
 }
