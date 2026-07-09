@@ -11,6 +11,9 @@
 #define SYS_READ_LINE 5
 #define SYS_YIELD 6
 #define SYS_GETPID 7
+#define SYS_WAITPID 8
+#define SYS_GETPPID 9
+#define SYS_KILL 10
 
 extern void syscall_stub(void);
 

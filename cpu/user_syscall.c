@@ -32,3 +32,9 @@ void user_exit(u32 code) {
 u32 user_yield(void) { return syscall3(SYS_YIELD, 0, 0, 0); }
 
 u32 sys_getpid(void) { return syscall3(SYS_GETPID, 0, 0, 0); }
+
+u32 sys_waitpid(u32 pid) { return syscall3(SYS_WAITPID, pid, 0, 0); }
+
+u32 sys_getppid(void) { return syscall3(SYS_GETPPID, 0, 0, 0); }
+
+u32 sys_kill(u32 pid) { return syscall3(SYS_KILL, pid, 0, 0); }

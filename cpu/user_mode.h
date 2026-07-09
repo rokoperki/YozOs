@@ -23,12 +23,15 @@ struct task;
 
 #define USER_KILL_OK 1
 #define USER_KILL_NOT_FOUND 0
-#define USER_KILL_DEAD -1
-#define USER_KILL_NO_TASK -2
+#define USER_KILL_DEAD 2
+#define USER_KILL_NO_TASK 3
 
 #define USER_WAIT_OK 1
 #define USER_WAIT_NOT_FOUND 0
 #define USER_WAIT_RUNNING -1
+
+#define USER_WAITPID_RUNNING 0xFFFFFFFC
+#define USER_WAITPID_NOT_FOUND 0xFFFFFFFF
 
 typedef struct {
   u32 start;
@@ -55,6 +58,7 @@ typedef struct {
 typedef struct {
   const char *name;
   u32 pid;
+  u32 parent_pid;
   struct task *task;
   user_program_t *program;
   user_process_state_t state;
@@ -82,7 +86,9 @@ void user_process_reap(void);
 int user_process_reap_pid(u32 pid);
 int user_process_kill_pid(u32 pid);
 u32 user_current_pid(void);
+u32 user_current_ppid();
 int user_process_wait_pid(u32 pid);
+u32 user_waitpid_status(u32 pid);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
 int run_user_file(char *name);

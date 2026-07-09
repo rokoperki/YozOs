@@ -20,7 +20,7 @@ compiler = "nasm"
 compile_flags_txt = ["-f", "bin", "-I", "/Users/jozo/YozOs/boot/"]
 
 [[project]]
-path = "cpu"
+path = "user"
 version = "0.10.1"
 assembler = "nasm"
 instruction_set = "x86/x86-64"

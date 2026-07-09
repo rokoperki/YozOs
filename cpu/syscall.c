@@ -92,5 +92,17 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     return user_current_pid();
   }
 
+  if (num == SYS_WAITPID) {
+    return user_waitpid_status(arg1);
+  }
+
+  if (num == SYS_GETPPID) {
+    return user_current_ppid();
+  }
+
+  if (num == SYS_KILL) {
+    return user_process_kill_pid(arg1);
+  }
+
   return 0xFFFFFFFF;
 }

@@ -211,6 +211,20 @@ static user_process_t *user_process_alloc() {
   return 0;
 }
 
+static user_process_t *user_process_find_pid(u32 pid) {
+  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
+    user_process_t *p = &user_process_table[i];
+
+    if (p->state == USER_PROCESS_UNUSED)
+      continue;
+
+    if (p->pid == pid)
+      return p;
+  }
+
+  return 0;
+}
+
 static void user_process_assign_pid(user_process_t *process) {
   if (process->pid == 0)
     process->pid = next_user_pid++;
@@ -220,6 +234,7 @@ static void user_process_clear(user_process_t *process) {
   process->state = USER_PROCESS_UNUSED;
   process->name = 0;
   process->pid = 0;
+  process->parent_pid = 0;
   process->task = 0;
   process->program = 0;
   process->exit_code = 0;
@@ -295,8 +310,6 @@ int run_user_process(user_process_t *process) {
 
   if ((u32)code == USER_EXIT_FAULT) {
     process->state = USER_PROCESS_FAILED;
-  } else if (code < 0) {
-    process->state = USER_PROCESS_FAILED;
   } else {
     process->state = USER_PROCESS_EXITED;
   }
@@ -313,6 +326,7 @@ static void init_user_test_process(user_process_t *process) {
   *process = (user_process_t){
       .name = "user_test",
       .pid = 0,
+      .parent_pid = 0,
       .task = 0,
       .program = &user_test_program,
       .state = USER_PROCESS_READY,
@@ -450,6 +464,11 @@ void user_process_dump(void) {
     print(buf);
     print(" ");
 
+    print(" ppid=");
+    int_to_ascii(p->parent_pid, buf);
+    print(buf);
+    print(" ");
+
     print(p->name);
     print(" ");
 
@@ -482,117 +501,107 @@ void user_process_reap(void) {
 }
 
 int user_process_reap_pid(u32 pid) {
-  user_process_t *p;
-  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
-    if (user_process_table[i].state == USER_PROCESS_UNUSED) {
-      continue;
-    }
+  user_process_t *p = user_process_find_pid(pid);
 
-    if (user_process_table[i].pid != pid) {
-      continue;
-    }
+  if (!p) {
+    println("no such process");
+    return USER_REAP_NOT_FOUND;
+  }
 
-    p = &user_process_table[i];
-
-    if (p == current_user_process) {
-      println("process is still running");
-      return USER_REAP_RUNNING;
-    }
-
-    if (user_process_is_dead(p)) {
-      user_process_clear(p);
-      return USER_REAP_OK;
-    }
-
+  if (p == current_user_process) {
     println("process is still running");
     return USER_REAP_RUNNING;
   }
-  println("no such process");
-  return USER_REAP_NOT_FOUND;
+
+  if (user_process_is_dead(p)) {
+    user_process_clear(p);
+    return USER_REAP_OK;
+  }
+
+  println("process is still running");
+  return USER_REAP_RUNNING;
 }
 
 int user_process_kill_pid(u32 pid) {
-  user_process_t *p;
+  user_process_t *p = user_process_find_pid(pid);
 
-  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
-    if (user_process_table[i].state == USER_PROCESS_UNUSED) {
-      continue;
-    }
-
-    if (user_process_table[i].pid != pid) {
-      continue;
-    }
-
-    p = &user_process_table[i];
-
-    if (user_process_is_dead(p)) {
-      println("process already dead");
-      return USER_KILL_DEAD;
-    }
-
-    if (p->task == 0) {
-      println("process has no task");
-      return USER_KILL_NO_TASK;
-    }
-
-    if (task_kill(p->task) == 0) {
-      println("could not kill task");
-      return USER_KILL_NO_TASK;
-    }
-
-    if (p == loaded_user_process) {
-      loaded_user_process = 0;
-      loaded_user_busy = 0;
-    }
-
-    p->state = USER_PROCESS_KILLED;
-    p->exit_code = USER_EXIT_KILLED;
-    println("process killed");
-    return USER_KILL_OK;
+  if (!p) {
+    println("no such process");
+    return USER_KILL_NOT_FOUND;
   }
-  println("no such process");
-  return USER_KILL_NOT_FOUND;
+
+  if (user_process_is_dead(p)) {
+    println("process already dead");
+    return USER_KILL_DEAD;
+  }
+
+  if (p->task == 0) {
+    println("process has no task");
+    return USER_KILL_NO_TASK;
+  }
+
+  if (task_kill(p->task) == 0) {
+    println("could not kill task");
+    return USER_KILL_NO_TASK;
+  }
+
+  if (p == loaded_user_process) {
+    loaded_user_process = 0;
+    loaded_user_busy = 0;
+  }
+
+  p->state = USER_PROCESS_KILLED;
+  p->exit_code = USER_EXIT_KILLED;
+  println("process killed");
+  return USER_KILL_OK;
 }
 
 int user_process_wait_pid(u32 pid) {
-  for (int i = 0; i < MAX_USER_PROCESSES; i++) {
-    user_process_t *p = &user_process_table[i];
+  user_process_t *p = user_process_find_pid(pid);
 
-    if (p->state == USER_PROCESS_UNUSED)
-      continue;
-
-    if (p->pid != pid)
-      continue;
-
-    char buf[16];
-
-    if (p->state == USER_PROCESS_EXITED) {
-      print("process exited: ");
-      int_to_ascii(p->exit_code, buf);
-      println(buf);
-      return USER_WAIT_OK;
-    }
-
-    if (p->state == USER_PROCESS_FAILED) {
-      print("process failed: ");
-      int_to_ascii(p->exit_code, buf);
-      println(buf);
-      return USER_WAIT_OK;
-    }
-
-    if (p->state == USER_PROCESS_KILLED) {
-      print("process killed: ");
-      int_to_ascii(p->exit_code, buf);
-      println(buf);
-      return USER_WAIT_OK;
-    }
-
-    println("process still running");
-    return USER_WAIT_RUNNING;
+  if (!p) {
+    println("no such process");
+    return USER_WAIT_NOT_FOUND;
   }
 
-  println("no such process");
-  return USER_WAIT_NOT_FOUND;
+  char buf[16];
+
+  if (p->state == USER_PROCESS_EXITED) {
+    print("process exited: ");
+    int_to_ascii(p->exit_code, buf);
+    println(buf);
+    return USER_WAIT_OK;
+  }
+
+  if (p->state == USER_PROCESS_FAILED) {
+    print("process failed: ");
+    int_to_ascii(p->exit_code, buf);
+    println(buf);
+    return USER_WAIT_OK;
+  }
+
+  if (p->state == USER_PROCESS_KILLED) {
+    print("process killed: ");
+    int_to_ascii(p->exit_code, buf);
+    println(buf);
+    return USER_WAIT_OK;
+  }
+
+  println("process still running");
+  return USER_WAIT_RUNNING;
+}
+
+u32 user_waitpid_status(u32 pid) {
+  user_process_t *p = user_process_find_pid(pid);
+
+  if (!p)
+    return USER_WAITPID_NOT_FOUND;
+
+  if (user_process_is_dead(p)) {
+    return p->exit_code;
+  }
+
+  return USER_WAITPID_RUNNING;
 }
 
 u32 user_current_pid() {
@@ -600,6 +609,13 @@ u32 user_current_pid() {
     return 0;
 
   return current_user_process->pid;
+}
+
+u32 user_current_ppid() {
+  if (current_user_process == 0)
+    return 0;
+
+  return current_user_process->parent_pid;
 }
 
 static void user_file_task_entry(void) {
@@ -650,6 +666,7 @@ int run_user_file(char *name) {
   *process = (user_process_t){
       .name = 0,
       .pid = 0,
+      .parent_pid = 0,
       .task = 0,
       .program = &loaded_user_program,
       .state = USER_PROCESS_READY,
