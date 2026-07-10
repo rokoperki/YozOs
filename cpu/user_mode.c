@@ -42,21 +42,19 @@ static int builtin_user_programs_ready;
 static user_process_t *pending_user_test_process;
 static user_process_t *pending_user_fault_process;
 
-// Single-slot external loader: one FAT-loaded program may be prepared/running
-// at a time because all external binaries load at USER_LOAD_ADDR.
-static user_region_t loaded_user_regions[2];
-static user_program_t loaded_user_program;
-static user_process_t *loaded_user_process;
-static int loaded_user_busy;
+// External binaries are staged at USER_LOAD_ADDR, then copied into private
+// process image frames before the task is started.
 
 static void init_user_fault_process(user_process_t *process);
 static void user_file_task_entry(void);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
-  if (!current_user_process || !current_user_process->program)
+  if (!current_user_process || !current_user_process->program ||
+      !current_user_process->address_space)
     return 0;
 
-  if (!user_pages_ok(ptr, len))
+  if (!address_space_user_pages_ok(current_user_process->address_space, ptr,
+                                   len))
     return 0;
 
   if (len == 0)
@@ -201,16 +199,18 @@ static int user_binary_header_ok(u8 *image, u32 loaded_len, u32 *entry) {
   return 1;
 }
 
-static void build_loaded_user_program(u32 loaded_len, u32 entry) {
-  user_region_set(&loaded_user_regions[0], USER_LOAD_ADDR, loaded_len,
+static void build_loaded_user_program(user_process_t *process, u32 loaded_len,
+                                      u32 entry) {
+  user_region_set(&process->loaded_regions[0], USER_LOAD_ADDR, loaded_len,
                   USER_REGION_READ | USER_REGION_WRITE | USER_REGION_EXEC);
 
-  user_region_set(&loaded_user_regions[1], USER_STACK_TOP - FRAME_SIZE,
+  user_region_set(&process->loaded_regions[1], USER_STACK_TOP - FRAME_SIZE,
                   FRAME_SIZE, USER_REGION_READ | USER_REGION_WRITE);
 
   user_program_set(
-      &loaded_user_program, entry, USER_STACK_TOP, loaded_user_regions,
-      sizeof(loaded_user_regions) / sizeof(loaded_user_regions[0]));
+      &process->loaded_program, entry, USER_STACK_TOP, process->loaded_regions,
+      sizeof(process->loaded_regions) / sizeof(process->loaded_regions[0]));
+  process->program = &process->loaded_program;
 }
 
 static void print_user_process_status(user_process_t *process) {
@@ -400,7 +400,6 @@ int run_user_process(user_process_t *process) {
 
   current_user_process = process;
   process->state = USER_PROCESS_RUNNING;
-  address_space_switch(process->address_space);
 
   int code = run_user_program(process->address_space, process->program);
 
@@ -411,7 +410,6 @@ int run_user_process(user_process_t *process) {
   }
 
   current_user_process = 0;
-  address_space_switch(kernel_address_space());
 
   return code;
 }
@@ -450,6 +448,7 @@ void user_test_task_entry() {
 
   run_user_process(process);
   print_user_process_status(process);
+
   task_exit();
 }
 
@@ -524,6 +523,8 @@ task_t *start_user_test_task(void) {
   }
 
   process->task = task;
+  task_set_user_process(task, process);
+  task_set_address_space(task, process->address_space);
   return task;
 }
 
@@ -562,6 +563,8 @@ task_t *start_user_fault_task(void) {
   }
 
   process->task = task;
+  task_set_user_process(task, process);
+  task_set_address_space(task, process->address_space);
   return task;
 }
 
@@ -598,6 +601,27 @@ void user_process_dump(void) {
     if (p->task) {
       print(" task=");
       int_to_ascii(task_get_id(p->task), buf);
+      print(buf);
+    }
+
+    print(" pd=");
+    int_to_ascii((u32)address_space_page_directory(p->address_space), buf);
+    print(buf);
+
+    print(" stack=");
+    int_to_ascii(p->user_stack_frame, buf);
+    print(buf);
+
+    print(" img=");
+    int_to_ascii(p->image_frame_count, buf);
+    print(buf);
+
+    for (u32 j = 0; j < p->image_frame_count; j++) {
+      print(" imgf");
+      int_to_ascii(j, buf);
+      print(buf);
+      print("=");
+      int_to_ascii(p->image_frames[j], buf);
       print(buf);
     }
 
@@ -665,11 +689,6 @@ int user_process_kill_pid(u32 pid) {
     return USER_KILL_NO_TASK;
   }
 
-  if (p == loaded_user_process) {
-    loaded_user_process = 0;
-    loaded_user_busy = 0;
-  }
-
   user_process_mark_killed(p);
   println("process killed");
   return USER_KILL_OK;
@@ -730,6 +749,10 @@ u32 user_current_pid() {
   return current_user_process->pid;
 }
 
+u32 user_process_pid(struct user_process *process) {
+  return process ? process->pid : 0;
+}
+
 u32 user_current_ppid() {
   if (current_user_process == 0)
     return 0;
@@ -738,27 +761,20 @@ u32 user_current_ppid() {
 }
 
 static void user_file_task_entry(void) {
-  if (!loaded_user_process) {
-    loaded_user_busy = 0;
+  task_t *task = task_current();
+  user_process_t *process = (user_process_t *)task_get_user_process(task);
+
+  if (!process)
     task_exit();
-  }
 
-  run_user_process(loaded_user_process);
-  print_user_process_status(loaded_user_process);
-
-  loaded_user_process = 0;
-  loaded_user_busy = 0;
+  run_user_process(process);
+  print_user_process_status(process);
   task_exit();
 }
 
 int run_user_file(char *name) {
   u32 loaded_len;
   u32 entry;
-
-  if (loaded_user_busy) {
-    println("user loader busy");
-    return -1;
-  }
 
   memory_set((u8 *)USER_LOAD_ADDR, 0, USER_LOAD_MAX_BYTES);
   if (!fat_read_file(name, (u8 *)USER_LOAD_ADDR, USER_LOAD_MAX_BYTES,
@@ -774,8 +790,6 @@ int run_user_file(char *name) {
   if (!user_binary_header_ok((u8 *)USER_LOAD_ADDR, loaded_len, &entry))
     return -1;
 
-  build_loaded_user_program(loaded_len, entry);
-
   user_process_t *process = user_process_alloc();
   if (!process) {
     println("no process slots");
@@ -788,10 +802,11 @@ int run_user_file(char *name) {
       .parent_pid = 0,
       .task = 0,
       .address_space = address_space_create_user(),
-      .program = &loaded_user_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  build_loaded_user_program(process, loaded_len, entry);
+
   user_process_assign_pid(process);
   user_process_set_name(process, name);
 
@@ -812,19 +827,16 @@ int run_user_file(char *name) {
     return -1;
   }
 
-  loaded_user_process = process;
-  loaded_user_busy = 1;
-
   task_t *task = spawn_task(process->name, user_file_task_entry);
   if (!task) {
     println("no task slot");
-    loaded_user_process = 0;
-    loaded_user_busy = 0;
     user_process_clear(process);
     return -1;
   }
 
   process->task = task;
+  task_set_user_process(task, process);
+  task_set_address_space(task, process->address_space);
 
   return 0;
 }

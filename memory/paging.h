@@ -24,6 +24,7 @@ extern void enable_paging(void);
 extern u32 read_cr2(void);
 
 int user_pages_ok(u32 ptr, u32 len);
+int address_space_user_pages_ok(address_space_t *space, u32 ptr, u32 len);
 void mark_user_page(u32 virt);
 void mark_user_range(u32 start, u32 len);
 

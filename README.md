@@ -21,9 +21,11 @@ Done so far:
   `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `WRITEPAT <file>
   <size>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
 - **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
-- **Paging** — E820 memory detection → bitmap frame allocator → identity-map of
-  the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler (ISR 14) reports the
-  `CR2` address; `PTEST` proves the MMU is live.
+- **Paging + address spaces** — E820 memory detection → bitmap frame allocator
+  → identity-map of the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler
+  (ISR 14) reports the `CR2` address; `PTEST` proves the MMU is live. User
+  processes now get their own page directory and low page table, and tasks carry
+  an address-space pointer so the scheduler switches `CR3` during task switches.
 - **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
   switching driven off the timer IRQ. The scheduler now has a boot-time
   main/idle task model, task states, a fixed task table, `spawn_task()`, exited
@@ -38,24 +40,24 @@ Done so far:
   files up to 8 KiB.
 - **Userspace bring-up** — the kernel installs a C-managed final GDT with ring-3
   code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
-  switching, enters linked-in user programs with `iret`, and handles `int 0x80`
-  syscalls: `SYS_WRITE_CHAR`, `SYS_STRING_WRITE`, `SYS_WRITE_BUFFER`,
-  `SYS_READ_LINE`, `SYS_EXIT`, and `SYS_YIELD`. The syscall stub saves/restores
-  user register and segment state, switches to kernel data segments for the C
-  handler, and returns values through the interrupted user's `eax`. Kernel pages
-  are supervisor-only by default; linked-in user code/data/stack regions are
-  explicitly marked `PAGE_USER` and carry read/write/execute permissions.
-  Syscall pointer arguments are validated against both page-table user bits and
-  declared region permissions. Keyboard input has shell/user ownership so
-  `SYS_READ_LINE` can read a line while the shell is not consuming it. `USERTEST`
-  and `USERFAULT` now run as scheduler-owned kernel tasks that enter ring 3,
-  report async exit/fault status, and are tracked in a small user-process table
-  visible through `PROCS`. Built-in user tests are described through
-  loader-shaped `user_program_t` descriptors. `RUN <file>` loads a headered
-  `YOZ1` flat binary from the FAT16 data disk into a fixed user address
-  (`0x70000`), validates its magic/load address/entry/size, builds a
-  `user_program_t`, and enters it in ring 3. External test programs now cover
-  output (`HELLO.BIN`), input (`ECHO.BIN`), and user fault handling (`FAULT.BIN`).
+  switching, enters user programs with `iret`, and handles `int 0x80` syscalls:
+  `SYS_WRITE_CHAR`, `SYS_STRING_WRITE`, `SYS_WRITE_BUFFER`, `SYS_READ_LINE`,
+  `SYS_EXIT`, `SYS_YIELD`, `SYS_GETPID`, `SYS_GETPPID`, `SYS_WAITPID`, and
+  `SYS_KILL`. The syscall stub saves/restores user register and segment state,
+  switches to kernel data segments for the C handler, and returns values through
+  the interrupted user's `eax`. Syscall pointer arguments are validated against
+  the current process address space and declared region permissions. Keyboard
+  input has shell/user ownership so `SYS_READ_LINE` can read a line while the
+  shell is not consuming it. `USERTEST` and `USERFAULT` run as scheduler-owned
+  tasks that enter ring 3, report async exit/fault status, and are tracked in a
+  small user-process table visible through `PROCS`. `RUN <file>` loads a
+  headered `YOZ1` flat binary from the FAT16 data disk, validates its
+  magic/load address/entry/size, copies the image into private process frames,
+  maps those frames at the fixed user virtual address (`0x70000`), gives the
+  process a private user stack frame, and enters it in ring 3. External test
+  programs now cover output (`HELLO.BIN`), input (`ECHO.BIN`), and user fault
+  handling (`FAULT.BIN`). `PROCS` and `TASKS` show address-space/process linkage
+  and user frame ownership for debugging.
 
 ## Layout
 

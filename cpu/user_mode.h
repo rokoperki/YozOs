@@ -58,7 +58,7 @@ typedef struct {
   u32 region_count;
 } user_program_t;
 
-typedef struct {
+typedef struct user_process {
   const char *name;
   u32 pid;
   u32 parent_pid;
@@ -70,6 +70,8 @@ typedef struct {
   u32 exit_code;
   u32 image_frames[USER_MAX_IMAGE_FRAMES];
   u32 image_frame_count;
+  user_region_t loaded_regions[2];
+  user_program_t loaded_program;
 } user_process_t;
 
 int run_user_process(user_process_t *process);
@@ -92,6 +94,7 @@ void user_process_dump(void);
 void user_process_reap(void);
 int user_process_reap_pid(u32 pid);
 int user_process_kill_pid(u32 pid);
+u32 user_process_pid(struct user_process *process);
 u32 user_current_pid(void);
 u32 user_current_ppid();
 int user_process_wait_pid(u32 pid);

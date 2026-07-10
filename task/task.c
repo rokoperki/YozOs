@@ -1,6 +1,7 @@
 
 #include "task.h"
 #include "../drivers/screen.h"
+#include "../cpu/user_mode.h"
 #include "../kernel/string.h"
 #include "../memory/frame_alloc.h"
 
@@ -52,6 +53,8 @@ void scheduler_init() {
   main_task.state = TASK_RUNNING;
   main_task.esp = 0;
   main_task.next = &main_task;
+  main_task.user_process = 0;
+  main_task.address_space = kernel_address_space();
   current = &main_task;
   task_list = &main_task;
 
@@ -86,6 +89,8 @@ void create_task(task_t *t, const char *name, void (*entry)()) {
   t->esp = (u32)stack;
   t->id = next_task_id++;
   t->name = name;
+  t->user_process = 0;
+  t->address_space = kernel_address_space();
   t->state = TASK_READY;
   t->next = 0;
 }
@@ -110,6 +115,11 @@ void schedule() {
 
   next->state = TASK_RUNNING;
   current = next;
+
+  if (next->address_space)
+    address_space_switch(next->address_space);
+  else
+    address_space_switch(kernel_address_space());
 
   if (prev != next) {
     switch_context(&prev->esp, next->esp);
@@ -145,6 +155,8 @@ void task_remove(task_t *target) {
       t->next = 0;
       t->state = TASK_UNUSED;
       t->name = "unused";
+      t->user_process = 0;
+      t->address_space = 0;
       t->esp = 0;
       return;
     }
@@ -202,6 +214,8 @@ void task_reap_exited(void) {
       if (task_from_table(t)) {
         t->state = TASK_UNUSED;
         t->name = "unused";
+        t->user_process = 0;
+        t->address_space = 0;
         t->esp = 0;
       }
 
@@ -229,7 +243,15 @@ void task_dump() {
     print(t->name);
     print(" ");
 
-    println(task_state_name(t->state));
+    print(task_state_name(t->state));
+
+    print(" as=");
+    int_to_ascii((u32)address_space_page_directory(t->address_space), buf);
+    print(buf);
+
+    print(" proc=");
+    int_to_ascii(user_process_pid(t->user_process), buf);
+    println(buf);
 
     t = t->next;
 
@@ -271,4 +293,24 @@ int task_kill(task_t *task) {
   task->state = TASK_EXITED;
 
   return 1;
+}
+
+void task_set_user_process(task_t *task, struct user_process *process) {
+  if (task)
+    task->user_process = process;
+}
+
+struct user_process *task_get_user_process(task_t *task) {
+  return task ? task->user_process : 0;
+}
+
+task_t *task_current(void) { return current; }
+
+void task_set_address_space(task_t *task, address_space_t *space) {
+  if (task)
+    task->address_space = space;
+}
+
+address_space_t *task_get_address_space(task_t *task) {
+  return task ? task->address_space : 0;
 }

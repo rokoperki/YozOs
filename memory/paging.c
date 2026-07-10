@@ -17,8 +17,7 @@ u32 *address_space_page_directory(address_space_t *space) {
   return space->page_directory;
 }
 
-static int address_space_user_pages_ok(address_space_t *space, u32 ptr,
-                                       u32 len) {
+int address_space_user_pages_ok(address_space_t *space, u32 ptr, u32 len) {
   if (!space || !space->page_directory)
     return 0;
 
