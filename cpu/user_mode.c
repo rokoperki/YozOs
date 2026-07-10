@@ -4,14 +4,17 @@
 #include "../fs/fat.h"
 #include "../kernel/mem.h"
 #include "../kernel/string.h"
+#include "../memory/frame_alloc.h"
 #include "../memory/paging.h"
 #include "../task/task.h"
 #include "tss.h"
 #include "user_test.h"
 
-static void prepare_user_program(user_program_t *program) {
+static void prepare_user_program(address_space_t *space,
+                                 user_program_t *program) {
   for (u32 i = 0; i < program->region_count; i++) {
-    mark_user_range(program->regions[i].start, program->regions[i].len);
+    address_space_mark_user_range(space, program->regions[i].start,
+                                  program->regions[i].len);
   }
 }
 
@@ -252,6 +255,56 @@ static void user_process_assign_pid(user_process_t *process) {
     process->pid = next_user_pid++;
 }
 
+static int user_process_map_stack(user_process_t *process) {
+  u32 frame = alloc_frame();
+  if (frame == 0)
+    return 0;
+
+  memory_set((u8 *)frame, 0, FRAME_SIZE);
+
+  if (!address_space_map_page(process->address_space,
+                              USER_STACK_TOP - FRAME_SIZE, frame,
+                              PAGE_RW | PAGE_USER)) {
+    free_frame(frame);
+    return 0;
+  }
+
+  process->user_stack_frame = frame;
+  return 1;
+}
+
+static int user_process_map_loaded_image(user_process_t *process, u32 image,
+                                         u32 len) {
+  u32 pages = (len + FRAME_SIZE - 1) / FRAME_SIZE;
+  if (pages == 0 || pages > USER_MAX_IMAGE_FRAMES)
+    return 0;
+
+  for (u32 i = 0; i < pages; i++) {
+    u32 frame = alloc_frame();
+    if (frame == 0)
+      return 0;
+
+    memory_set((u8 *)frame, 0, FRAME_SIZE);
+
+    u32 remaining = len - (i * FRAME_SIZE);
+    u32 copy_len = remaining > FRAME_SIZE ? FRAME_SIZE : remaining;
+
+    memory_copy((char *)(image + (i * FRAME_SIZE)), (char *)frame, copy_len);
+
+    if (!address_space_map_page(process->address_space,
+                                USER_LOAD_ADDR + (i * FRAME_SIZE), frame,
+                                PAGE_RW | PAGE_USER)) {
+      free_frame(frame);
+      return 0;
+    }
+
+    process->image_frames[i] = frame;
+    process->image_frame_count++;
+  }
+
+  return 1;
+}
+
 static void user_process_clear(user_process_t *process) {
   process->state = USER_PROCESS_UNUSED;
   process->name = 0;
@@ -259,6 +312,19 @@ static void user_process_clear(user_process_t *process) {
   process->parent_pid = 0;
   process->task = 0;
   process->program = 0;
+
+  if (process->user_stack_frame) {
+    free_frame(process->user_stack_frame);
+    process->user_stack_frame = 0;
+  }
+
+  for (u32 i = 0; i < process->image_frame_count; i++) {
+    if (process->image_frames[i]) {
+      free_frame(process->image_frames[i]);
+    }
+    process->image_frame_count = 0;
+  }
+
   address_space_destroy(process->address_space);
   process->address_space = 0;
   process->exit_code = 0;
@@ -289,7 +355,7 @@ static void user_process_set_name(user_process_t *process, char *name) {
   process->name = name;
 }
 
-int run_user_program(user_program_t *program) {
+int run_user_program(address_space_t *space, user_program_t *program) {
   u32 ret = user_context_save();
 
   if (ret != 0) {
@@ -300,7 +366,7 @@ int run_user_program(user_program_t *program) {
   }
   keyboard_clear_line();
   keyboard_set_owner(KEYBOARD_OWNER_USER);
-  prepare_user_program(program);
+  prepare_user_program(space, program);
   tss_set_kernel_stack((u32)user_kernel_stack + USER_KERNEL_STACK_SIZE);
   enter_user_mode(program->entry, program->stack_top);
 
@@ -336,7 +402,7 @@ int run_user_process(user_process_t *process) {
   process->state = USER_PROCESS_RUNNING;
   address_space_switch(process->address_space);
 
-  int code = run_user_program(process->program);
+  int code = run_user_program(process->address_space, process->program);
 
   if ((u32)code == USER_EXIT_FAULT) {
     user_process_mark_failed(process, USER_EXIT_FAULT);
@@ -441,6 +507,11 @@ task_t *start_user_test_task(void) {
     user_process_clear(process);
     return 0;
   }
+  if (!user_process_map_stack(process)) {
+    println("no user stack");
+    user_process_clear(process);
+    return 0;
+  }
 
   pending_user_test_process = process;
 
@@ -471,6 +542,11 @@ task_t *start_user_fault_task(void) {
   init_user_fault_process(process);
   if (!process->address_space) {
     println("no address space");
+    user_process_clear(process);
+    return 0;
+  }
+  if (!user_process_map_stack(process)) {
+    println("no user stack");
     user_process_clear(process);
     return 0;
   }
@@ -721,6 +797,17 @@ int run_user_file(char *name) {
 
   if (!process->address_space) {
     println("no address space");
+    user_process_clear(process);
+    return -1;
+  }
+  if (!user_process_map_stack(process)) {
+    println("no user stack");
+    user_process_clear(process);
+    return -1;
+  }
+
+  if (!user_process_map_loaded_image(process, USER_LOAD_ADDR, loaded_len)) {
+    print("no user image");
     user_process_clear(process);
     return -1;
   }

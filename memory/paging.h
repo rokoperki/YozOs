@@ -14,6 +14,7 @@
 
 typedef struct {
   u32 *page_directory;
+  u32 *low_page_table;
 } address_space_t;
 
 void init_paging();
@@ -31,5 +32,9 @@ address_space_t *address_space_create_user(void);
 void address_space_destroy(address_space_t *space);
 u32 *address_space_page_directory(address_space_t *space);
 void address_space_switch(address_space_t *space);
+
+int address_space_map_page(address_space_t *space, u32 virt, u32 phys,
+                           u32 flags);
+void address_space_mark_user_range(address_space_t *space, u32 start, u32 len);
 
 #endif

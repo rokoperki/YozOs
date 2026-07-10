@@ -34,6 +34,8 @@ struct task;
 #define USER_WAITPID_RUNNING 0xFFFFFFFC
 #define USER_WAITPID_NOT_FOUND 0xFFFFFFFF
 
+#define USER_MAX_IMAGE_FRAMES 2
+
 typedef struct {
   u32 start;
   u32 len;
@@ -62,14 +64,17 @@ typedef struct {
   u32 parent_pid;
   struct task *task;
   user_program_t *program;
+  u32 user_stack_frame;
   address_space_t *address_space;
   user_process_state_t state;
   u32 exit_code;
+  u32 image_frames[USER_MAX_IMAGE_FRAMES];
+  u32 image_frame_count;
 } user_process_t;
 
 int run_user_process(user_process_t *process);
 void enter_user_mode(u32 entry, u32 user_stack);
-int run_user_program(user_program_t *program);
+int run_user_program(address_space_t *space, user_program_t *program);
 
 void user_exit_current(u32 code);
 u32 user_context_save(void);

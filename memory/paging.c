@@ -73,6 +73,7 @@ void init_paging() {
   kernel_space.page_directory = (u32 *)alloc_frame();
   memory_set((u8 *)kernel_space.page_directory, 0, FRAME_SIZE);
   kernel_page_table = (u32 *)alloc_frame();
+  kernel_space.low_page_table = kernel_page_table;
 
   for (int i = 0; i < PAGE_ENTRIES; i++) {
     kernel_page_table[i] = (i * FRAME_SIZE) | PAGE_PRESENT | PAGE_RW;
@@ -98,14 +99,15 @@ static void address_space_mark_user_page(address_space_t *space, u32 virt) {
     return;
 
   u32 *pt = (u32 *)(pde & PAGE_ADDR_MASK);
-  pt[pt_index] |= PAGE_USER;
+  u32 pte = pt[pt_index];
+  if ((pte & PAGE_PRESENT) == 0)
+    return;
+
+  u32 new_flags = (pte & ~PAGE_ADDR_MASK) | PAGE_USER;
+  address_space_map_page(space, virt, pte & PAGE_ADDR_MASK, new_flags);
 }
 
-void mark_user_page(u32 virt) {
-  address_space_mark_user_page(current_space, virt);
-}
-
-void mark_user_range(u32 start, u32 len) {
+void address_space_mark_user_range(address_space_t *space, u32 start, u32 len) {
   if (len == 0)
     return;
 
@@ -117,7 +119,7 @@ void mark_user_range(u32 start, u32 len) {
   u32 last = end & PAGE_ADDR_MASK;
 
   while (1) {
-    mark_user_page(addr);
+    address_space_mark_user_page(space, addr);
 
     if (addr == last)
       break;
@@ -127,6 +129,14 @@ void mark_user_range(u32 start, u32 len) {
 
     addr += FRAME_SIZE;
   }
+}
+
+void mark_user_page(u32 virt) {
+  address_space_mark_user_page(current_space, virt);
+}
+
+void mark_user_range(u32 start, u32 len) {
+  address_space_mark_user_range(current_space, start, len);
 }
 
 address_space_t *address_space_create_user(void) {
@@ -142,7 +152,21 @@ address_space_t *address_space_create_user(void) {
     user_spaces[i].page_directory = (u32 *)dir;
     memory_set((u8 *)user_spaces[i].page_directory, 0, FRAME_SIZE);
 
-    user_spaces[i].page_directory[0] = kernel_space.page_directory[0];
+    u32 table = alloc_frame();
+    if (table == 0) {
+      free_frame(dir);
+      user_spaces[i].page_directory = 0;
+      return 0;
+    }
+
+    user_spaces[i].low_page_table = (u32 *)table;
+    memory_set((u8 *)user_spaces[i].low_page_table, 0, FRAME_SIZE);
+
+    memory_copy((char *)kernel_space.low_page_table,
+                (char *)user_spaces[i].low_page_table, FRAME_SIZE);
+
+    user_spaces[i].page_directory[0] =
+        (u32)user_spaces[i].low_page_table | PAGE_PRESENT | PAGE_RW | PAGE_USER;
 
     return &user_spaces[i];
   }
@@ -152,6 +176,11 @@ address_space_t *address_space_create_user(void) {
 void address_space_destroy(address_space_t *space) {
   if (!space || space == &kernel_space)
     return;
+
+  if (space->low_page_table) {
+    free_frame((u32)space->low_page_table);
+    space->low_page_table = 0;
+  }
 
   if (space->page_directory) {
     free_frame((u32)space->page_directory);
@@ -165,4 +194,22 @@ void address_space_switch(address_space_t *space) {
 
   current_space = space;
   load_page_directory(space->page_directory);
+}
+
+int address_space_map_page(address_space_t *space, u32 virt, u32 phys,
+                           u32 flags) {
+  if (!space || !space->page_directory)
+    return 0;
+
+  u32 pd_index = virt >> 22;
+  u32 pt_index = (virt >> 12) & 0x3FF;
+
+  u32 pde = space->page_directory[pd_index];
+  if ((pde & PAGE_PRESENT) == 0)
+    return 0;
+
+  u32 *pt = (u32 *)(pde & PAGE_ADDR_MASK);
+  pt[pt_index] = (phys & PAGE_ADDR_MASK) | flags | PAGE_PRESENT;
+
+  return 1;
 }
