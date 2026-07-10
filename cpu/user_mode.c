@@ -259,6 +259,8 @@ static void user_process_clear(user_process_t *process) {
   process->parent_pid = 0;
   process->task = 0;
   process->program = 0;
+  address_space_destroy(process->address_space);
+  process->address_space = 0;
   process->exit_code = 0;
 
   for (int i = 0; i < MAX_USER_PROCESSES; i++) {
@@ -325,8 +327,14 @@ static const char *user_process_state_name(user_process_state_t state) {
 void user_exit_current(u32 code) { user_context_restore(code + 1); }
 
 int run_user_process(user_process_t *process) {
+  if (!process->address_space) {
+    user_process_mark_failed(process, 1);
+    return 1;
+  }
+
   current_user_process = process;
   process->state = USER_PROCESS_RUNNING;
+  address_space_switch(process->address_space);
 
   int code = run_user_program(process->program);
 
@@ -337,6 +345,7 @@ int run_user_process(user_process_t *process) {
   }
 
   current_user_process = 0;
+  address_space_switch(kernel_address_space());
 
   return code;
 }
@@ -349,6 +358,7 @@ static void init_user_test_process(user_process_t *process) {
       .pid = 0,
       .parent_pid = 0,
       .task = 0,
+      .address_space = address_space_create_user(),
       .program = &user_test_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
@@ -399,6 +409,7 @@ static void init_user_fault_process(user_process_t *process) {
       .pid = 0,
       .task = 0,
       .program = &user_fault_program,
+      .address_space = address_space_create_user(),
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
@@ -425,6 +436,12 @@ task_t *start_user_test_task(void) {
   }
 
   init_user_test_process(process);
+  if (!process->address_space) {
+    println("no address space");
+    user_process_clear(process);
+    return 0;
+  }
+
   pending_user_test_process = process;
 
   task_t *task = spawn_task(process->name, user_test_task_entry);
@@ -452,6 +469,12 @@ task_t *start_user_fault_task(void) {
   }
 
   init_user_fault_process(process);
+  if (!process->address_space) {
+    println("no address space");
+    user_process_clear(process);
+    return 0;
+  }
+
   pending_user_fault_process = process;
 
   task_t *task = spawn_task(process->name, user_fault_task_entry);
@@ -688,12 +711,19 @@ int run_user_file(char *name) {
       .pid = 0,
       .parent_pid = 0,
       .task = 0,
+      .address_space = address_space_create_user(),
       .program = &loaded_user_program,
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
   user_process_assign_pid(process);
   user_process_set_name(process, name);
+
+  if (!process->address_space) {
+    println("no address space");
+    user_process_clear(process);
+    return -1;
+  }
 
   loaded_user_process = process;
   loaded_user_busy = 1;
@@ -703,12 +733,7 @@ int run_user_file(char *name) {
     println("no task slot");
     loaded_user_process = 0;
     loaded_user_busy = 0;
-    process->state = USER_PROCESS_UNUSED;
-    process->name = 0;
-    process->pid = 0;
-    process->task = 0;
-    process->program = 0;
-    process->exit_code = 0;
+    user_process_clear(process);
     return -1;
   }
 

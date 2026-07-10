@@ -1,6 +1,7 @@
 #ifndef USER_MODE_H
 #define USER_MODE_H
 
+#include "../memory/paging.h"
 #include "types.h"
 
 struct task;
@@ -61,6 +62,7 @@ typedef struct {
   u32 parent_pid;
   struct task *task;
   user_program_t *program;
+  address_space_t *address_space;
   user_process_state_t state;
   u32 exit_code;
 } user_process_t;
