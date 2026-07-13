@@ -24,6 +24,11 @@ typedef struct {
   u32 size;                            // 0x1C
 } __attribute__((packed)) dir_entry_t; // 32B
 
+typedef struct {
+  u32 size;
+  u16 first_cluster;
+} fat_file_info_t;
+
 void fs_init(void);
 void fs_info(void);
 void fs_ls(void);
@@ -34,5 +39,8 @@ void fs_write(char *name, char *text);
 void fs_delete(char *name);
 void fs_append(char *name, char *text);
 void fs_rename(char *name, char *new_name);
+
+int fat_stat_file(char *name, fat_file_info_t *out);
+int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len);
 
 #endif

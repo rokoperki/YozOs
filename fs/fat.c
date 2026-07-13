@@ -207,11 +207,85 @@ u16 fat_entry(u32 cluster) {
   return buff[(off % 512) / 2];
 }
 
-int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
-  char target[11];
+int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len) {
+  fat_file_info_t info;
 
   if (out_len)
     *out_len = 0;
+
+  if (!dst && len > 0)
+    return 0;
+
+  if (!fat_stat_file(name, &info))
+    return 0;
+
+  if (offset >= info.size)
+    return 0;
+
+  u32 available = info.size - offset;
+  u32 wanted = len < available ? len : available;
+
+  u16 cluster = info.first_cluster;
+  u32 file_pos = 0;
+  u32 copied = 0;
+  u16 buff[256];
+
+  while (cluster < 0xFFF8 && copied < wanted) {
+    u32 lba = data_start + (cluster - 2) * sec_per_clus;
+
+    for (u8 sc = 0; sc < sec_per_clus && copied < wanted; sc++) {
+      ata_read(lba + sc, 1, buff);
+
+      char *bytes = (char *)buff;
+
+      for (u32 i = 0; i < 512 && copied < wanted; i++) {
+        if (file_pos >= offset) {
+          dst[copied] = bytes[i];
+          copied++;
+        }
+
+        file_pos++;
+
+        if (file_pos >= info.size)
+          break;
+      }
+    }
+    cluster = fat_entry(cluster);
+  }
+
+  if (out_len)
+    *out_len = copied;
+
+  return copied == wanted;
+}
+
+int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
+  fat_file_info_t info;
+
+  if (out_len)
+    *out_len = 0;
+
+  if (!fat_stat_file(name, &info)) {
+    println("file not fount");
+    return 0;
+  }
+
+  if (info.size > max_len) {
+    println("file too big");
+    return 0;
+  }
+
+  return fat_read_file_at(name, 0, dst, info.size, out_len);
+}
+
+int fat_stat_file(char *name, fat_file_info_t *out) {
+  char target[11];
+
+  if (!out)
+    return 0;
+
+  out->size = 0;
+  out->first_cluster = 0;
 
   if (!require_valid_name(name))
     return 0;
@@ -221,46 +295,16 @@ int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(target, &dir_lba, &idx)) {
-    println("file not found");
+  if (!dir_find(target, &dir_lba, &idx))
     return 0;
-  }
 
   u16 dir_buff[256];
   ata_read(dir_lba, 1, dir_buff);
   dir_entry_t *e = (dir_entry_t *)dir_buff;
 
-  u16 first_cluster = e[idx].first_cluster;
-  u32 size = e[idx].size;
-
-  if (size > max_len) {
-    println("file too big");
-    return 0;
-  }
-
-  u16 cluster = first_cluster;
-  u32 remaining = size;
-  u32 copied = 0;
-  u16 buff[256]; // one sector
-
-  while (cluster < 0xFFF8 && remaining > 0) {
-    u32 lba = data_start + (cluster - 2) * sec_per_clus;
-    for (u8 sc = 0; sc < sec_per_clus && remaining > 0; sc++) {
-      ata_read(lba + sc, 1, buff);
-      char *bytes = (char *)buff;
-      u32 n = remaining < 512 ? remaining : 512;
-      for (u32 j = 0; j < n; j++)
-        dst[copied + j] = bytes[j];
-      copied += n;
-      remaining -= n;
-    }
-    cluster = fat_entry(cluster);
-  }
-
-  if (out_len)
-    *out_len = copied;
-
-  return remaining == 0;
+  out->size = e[idx].size;
+  out->first_cluster = e[idx].first_cluster;
+  return 1;
 }
 
 void fs_cat(char *name) {

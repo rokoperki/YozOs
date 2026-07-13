@@ -17,6 +17,7 @@ typedef struct {
   char name[VFS_MAX_NAME];
   u32 size;
   u32 offset;
+  u16 first_cluster;
 } vfs_file_t;
 
 void vfs_init(void);

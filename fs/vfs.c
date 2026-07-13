@@ -46,7 +46,7 @@ static int find_free_handle(void) {
 
 int vfs_open(const char *path) {
   char name[VFS_MAX_NAME];
-  u32 len = 0;
+  fat_file_info_t info;
 
   if (!normalize_path(path, name))
     return VFS_ERR_INVALID;
@@ -55,12 +55,13 @@ int vfs_open(const char *path) {
   if (h < 0)
     return VFS_ERR_NO_SPACE;
 
-  if (!fat_read_file(name, read_buf, VFS_MAX_FILE_BYTES, &len))
+  if (!fat_stat_file(name, &info))
     return VFS_ERR_NOT_FOUND;
 
   open_files[h].used = 1;
   open_files[h].offset = 0;
-  open_files[h].size = len;
+  open_files[h].size = info.size;
+  open_files[h].first_cluster = info.first_cluster;
 
   for (int i = 0; i < VFS_MAX_NAME; i++) {
     open_files[h].name[i] = name[i];
@@ -73,6 +74,9 @@ int vfs_read(int handle, u8 *dst, u32 len) {
   if (handle < 0 || handle >= VFS_MAX_OPEN_FILES)
     return VFS_ERR_INVALID;
 
+  if (!dst && len > 0)
+    return VFS_ERR_INVALID;
+
   vfs_file_t *f = &open_files[handle];
 
   if (!f->used)
@@ -81,18 +85,13 @@ int vfs_read(int handle, u8 *dst, u32 len) {
   if (f->offset >= f->size)
     return 0;
 
-  u32 file_len = 0;
+  u32 read_len = 0;
 
-  if (!fat_read_file(f->name, read_buf, VFS_MAX_FILE_BYTES, &file_len))
+  if (!fat_read_file_at(f->name, f->offset, dst, len, &read_len))
     return VFS_ERR_NOT_FOUND;
 
-  u32 remaining = file_len - f->offset;
-  u32 n = len < remaining ? len : remaining;
-
-  memory_copy((char *)read_buf + f->offset, (char *)dst, n);
-
-  f->offset += n;
-  return n;
+  f->offset += read_len;
+  return read_len;
 }
 
 int vfs_close(int handle) {

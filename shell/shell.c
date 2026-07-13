@@ -408,26 +408,32 @@ static void cmd_run(char *a) {
   run_user_file(a);
 }
 
-static void cmd_vfstest(char *a) {
+void cmd_vfstest(char *a) {
   UNUSED(a);
-  int h = vfs_open("HELLO.TXT");
+  int h = vfs_open("TEST.TXT");
 
   if (h < 0) {
     println("vfs open failed");
     return;
   }
 
-  char buff[120];
-  int n = vfs_read(h, (u8 *)buff, 63);
+  char buf[8];
 
-  if (n < 0) {
-    println("vfs read failed");
-    vfs_close(h);
-    return;
+  while (1) {
+    int n = vfs_read(h, (u8 *)buf, 7);
+
+    if (n < 0) {
+      println("vfs read failed");
+      break;
+    }
+
+    if (n == 0)
+      break;
+
+    buf[n] = '\0';
+    print(buf);
   }
 
-  buff[n] = '\0';
-  println(buff);
-
+  println("");
   vfs_close(h);
 }
