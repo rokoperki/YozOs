@@ -118,6 +118,10 @@ static void user_region_set(user_region_t *region, u32 start, u32 len,
   region->flags = flags;
 }
 
+// Built-in user tests are kernel-backed ring-3 fixtures. Their code/data are
+// linked into the kernel image and described as user regions for syscall/fault
+// testing. Real loaded programs use private image frames; moving these fixtures
+// to private mappings belongs with relocatable/ELF loading, not Phase 3.
 static void build_builtin_user_test_program(void) {
   user_region_set(&user_test_regions[0], (u32)user_test_main, FRAME_SIZE,
                   USER_REGION_READ | USER_REGION_EXEC);

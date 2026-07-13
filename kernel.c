@@ -4,6 +4,7 @@
 #include "drivers/keyboard.h"
 #include "drivers/screen.h"
 #include "fs/fat.h"
+#include "fs/vfs.h"
 #include "memory/frame_alloc.h"
 #include "memory/paging.h"
 #include "shell/shell.h"
@@ -24,6 +25,7 @@ int main() {
   init_paging();
 
   fs_init();
+  vfs_init();
 
   __asm__ __volatile__("sti");
 

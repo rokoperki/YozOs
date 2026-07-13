@@ -5,6 +5,7 @@
 #include "../drivers/ata.h"
 #include "../drivers/screen.h"
 #include "../fs/fat.h"
+#include "../fs/vfs.h"
 #include "../kernel/function.h"
 #include "../kernel/string.h"
 #include "../memory/frame_alloc.h"
@@ -45,6 +46,7 @@ static void cmd_procs(char *a);
 static void cmd_run(char *a);
 static void cmd_kill(char *a);
 static void cmd_wait(char *a);
+static void cmd_vfstest(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -73,6 +75,7 @@ static const command_t commands[] = {
     {"RUN", cmd_run, "<file> run flat user binary"},
     {"KILL", cmd_kill, "<pid> kill process"},
     {"WAIT", cmd_wait, "<pid> show process exit status"},
+    {"VFSTEST", cmd_vfstest, "test vfs"},
     {0, 0, 0},
 };
 
@@ -403,4 +406,28 @@ static void cmd_run(char *a) {
 
   reap_tasks();
   run_user_file(a);
+}
+
+static void cmd_vfstest(char *a) {
+  UNUSED(a);
+  int h = vfs_open("HELLO.TXT");
+
+  if (h < 0) {
+    println("vfs open failed");
+    return;
+  }
+
+  char buff[120];
+  int n = vfs_read(h, (u8 *)buff, 63);
+
+  if (n < 0) {
+    println("vfs read failed");
+    vfs_close(h);
+    return;
+  }
+
+  buff[n] = '\0';
+  println(buff);
+
+  vfs_close(h);
 }
