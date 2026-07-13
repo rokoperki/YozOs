@@ -19,5 +19,6 @@ u32 sys_read(u32 fd, char *buff, u32 len);
 u32 sys_close(u32 fd);
 u32 sys_write(u32 fd, char *buff, u32 len);
 u32 sys_stat(char *path, user_stat_t *out);
+u32 sys_lseek(u32 fd, u32 offset, u32 whence);
 
 #endif

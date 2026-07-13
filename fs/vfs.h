@@ -11,6 +11,8 @@
 #define VFS_ERR_INVALID -1
 #define VFS_ERR_NOT_FOUND -2
 #define VFS_ERR_NO_SPACE -3
+#define VFS_ERR_IO -4
+#define VFS_ERR_UNSUPPORTED -5
 
 #define VFS_STAT_TYPE_FILE 1
 
@@ -20,6 +22,9 @@ typedef struct {
   u32 size;
   u32 offset;
   u16 first_cluster;
+  u32 flags;
+  int readable;
+  int writable;
 } vfs_file_t;
 
 typedef struct {
@@ -32,5 +37,7 @@ int vfs_open(const char *path, u32 flags);
 int vfs_read(int handle, u8 *dst, u32 len);
 int vfs_close(int handle);
 int vfs_stat(const char *path, vfs_stat_t *out);
+int vfs_write(int handle, u8 *src, u32 len);
+int vfs_lseek(int handle, u32 offset, u32 whence);
 
 #endif

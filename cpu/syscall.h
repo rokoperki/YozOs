@@ -19,6 +19,7 @@
 #define SYS_CLOSE 13
 #define SYS_WRITE 14
 #define SYS_STAT 15
+#define SYS_LSEEK 16
 
 extern void syscall_stub(void);
 

@@ -164,5 +164,9 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     return user_stat_path(path, (user_stat_t *)arg2);
   }
 
+  if (num == SYS_LSEEK) {
+    return user_fd_lseek_current((int)arg1, arg2, arg3);
+  }
+
   return 0xFFFFFFFF;
 }

@@ -958,6 +958,9 @@ int user_fd_write_current(int fd, u8 *src, u32 len) {
     return len;
   }
 
+  if (entry->type == USER_FD_TYPE_VFS)
+    return vfs_write(entry->vfs_handle, src, len);
+
   return -1;
 }
 
@@ -979,6 +982,21 @@ int user_fd_close_current(int fd) {
   entry->vfs_handle = -1;
 
   return ret;
+}
+
+int user_fd_lseek_current(int fd, u32 offset, u32 whence) {
+  if (!current_user_process)
+    return -1;
+
+  if (fd < 0 || fd > +USER_MAX_FDS)
+    return -1;
+
+  user_fd_t *entry = &current_user_process->fds[fd];
+
+  if (entry->type != USER_FD_TYPE_VFS)
+    return -1;
+
+  return vfs_lseek(entry->vfs_handle, offset, whence);
 }
 
 int user_stat_path(char *path, user_stat_t *out) {

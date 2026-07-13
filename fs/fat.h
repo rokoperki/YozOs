@@ -3,6 +3,13 @@
 
 #include "../cpu/types.h"
 
+#define FAT_OK 0
+#define FAT_ERR_INVALID -1
+#define FAT_ERR_EXISTS -2
+#define FAT_ERR_NOT_FOUND -3
+#define FAT_ERR_NO_SPACE -4
+#define FAT_ERR_TOO_BIG -5
+
 typedef struct {
   u8 jump[3];             // 0x00
   u8 oem[8];              // 0x03
@@ -42,5 +49,8 @@ void fs_rename(char *name, char *new_name);
 
 int fat_stat_file(char *name, fat_file_info_t *out);
 int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len);
+int fat_create_file(char *name);
+int fat_write_file(char *name, u8 *src, u32 len);
+int fat_append_file(char *name, u8 *src, u32 len);
 
 #endif

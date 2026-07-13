@@ -220,7 +220,7 @@ int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len) {
     return 0;
 
   if (offset >= info.size)
-    return 0;
+    return 1;
 
   u32 available = info.size - offset;
   u32 wanted = len < available ? len : available;
@@ -266,7 +266,7 @@ int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
     *out_len = 0;
 
   if (!fat_stat_file(name, &info)) {
-    println("file not fount");
+    println("file not found");
     return 0;
   }
 
@@ -287,7 +287,7 @@ int fat_stat_file(char *name, fat_file_info_t *out) {
   out->size = 0;
   out->first_cluster = 0;
 
-  if (!require_valid_name(name))
+  if (!name_is_valid_83(name))
     return 0;
 
   name_to_83(name, target);
@@ -402,52 +402,61 @@ static void free_chain(u16 first_cluster) {
   }
 }
 
-void fs_create(char *name) {
+int fat_create_file(char *name) {
   char n83[11];
 
-  if (!require_valid_name(name))
-    return;
+  if (!name_is_valid_83(name))
+    return FAT_ERR_INVALID;
 
   name_to_83(name, n83);
 
   u32 lba;
   int idx;
 
-  if (dir_find(n83, &lba, &idx)) {
-    println("file already exist.");
-    return;
-  }
+  if (dir_find(n83, &lba, &idx))
+    return FAT_ERR_EXISTS;
 
-  if (!find_dir_free_slot(&lba, &idx)) {
-    println("dir full");
-    return;
-  }
+  if (!find_dir_free_slot(&lba, &idx))
+    return FAT_ERR_NO_SPACE;
 
   dir_write_entry(lba, idx, n83, 0, 0, 0x20);
-  println("created");
+  return FAT_OK;
 }
 
-void fs_write(char *name, char *text) {
+void fs_create(char *name) {
+  int ret = fat_create_file(name);
+
+  if (ret == FAT_OK)
+    println("created");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid 8.3 name");
+  else if (ret == FAT_ERR_EXISTS)
+    println("file already exist.");
+  else if (ret == FAT_ERR_NO_SPACE)
+    println("dir full");
+  else
+    println("create failed");
+}
+
+int fat_write_file(char *name, u8 *src, u32 len) {
   char n83[11];
 
-  if (!require_valid_name(name))
-    return;
+  if (!name_is_valid_83(name))
+    return FAT_ERR_INVALID;
+
+  if (len > 0 && !src)
+    return FAT_ERR_INVALID;
 
   name_to_83(name, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx)) {
-    println("no such file");
-    return;
-  }
+  if (!dir_find(n83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
 
-  u32 len = strlen(text);
-  if (len > MAX_FILE_BYTES) {
-    println("too big for v1");
-    return;
-  }
+  if (len > MAX_FILE_BYTES)
+    return FAT_ERR_TOO_BIG;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
@@ -459,16 +468,13 @@ void fs_write(char *name, char *text) {
     free_chain(old_clus);
 
     dir_write_entry(dir_lba, idx, n83, 0, 0, 0x20);
-    println("written");
-    return;
+    return FAT_OK;
   }
 
   u32 cluster_bytes = sec_per_clus * 512;
   u32 needed = (len + cluster_bytes - 1) / cluster_bytes;
-  if (needed > MAX_CHAIN_CLUSTERS) {
-    println("too big for v1");
-    return;
-  }
+  if (needed > MAX_CHAIN_CLUSTERS)
+    return FAT_ERR_TOO_BIG;
 
   u16 chain[MAX_CHAIN_CLUSTERS];
 
@@ -478,8 +484,7 @@ void fs_write(char *name, char *text) {
       for (u32 j = 0; j < i; j++) {
         fat_set_entry(chain[j], 0x0000);
       }
-      println("not enough space");
-      return;
+      return FAT_ERR_NO_SPACE;
     }
 
     chain[i] = clus;
@@ -503,7 +508,7 @@ void fs_write(char *name, char *text) {
       u32 chunk = remaining < 512 ? remaining : 512;
 
       memory_set((u8 *)buff, 0, 512);
-      memory_copy(text + offset, (char *)buff, chunk);
+      memory_copy((char *)src + offset, (char *)buff, chunk);
 
       ata_write(data_lba + sc, 1, buff);
 
@@ -515,7 +520,24 @@ void fs_write(char *name, char *text) {
 
   dir_write_entry(dir_lba, idx, n83, chain[0], len, 0x20);
 
-  println("written");
+  return FAT_OK;
+}
+
+void fs_write(char *name, char *text) {
+  int ret = fat_write_file(name, (u8 *)text, strlen(text));
+
+  if (ret == FAT_OK)
+    println("written");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid 8.3 name");
+  else if (ret == FAT_ERR_NOT_FOUND)
+    println("no such file");
+  else if (ret == FAT_ERR_TOO_BIG)
+    println("too big for v1");
+  else if (ret == FAT_ERR_NO_SPACE)
+    println("not enough space");
+  else
+    println("write failed");
 }
 
 void fs_delete(char *name) {
@@ -546,21 +568,22 @@ void fs_delete(char *name) {
   println("deleted");
 }
 
-void fs_append(char *name, char *text) {
+int fat_append_file(char *name, u8 *src, u32 append_len) {
   char n83[11];
 
-  if (!require_valid_name(name))
-    return;
+  if (!name_is_valid_83(name))
+    return FAT_ERR_INVALID;
+
+  if (append_len > 0 && !src)
+    return FAT_ERR_INVALID;
 
   name_to_83(name, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx)) {
-    println("no such file");
-    return;
-  }
+  if (!dir_find(n83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
@@ -568,23 +591,19 @@ void fs_append(char *name, char *text) {
 
   u16 first_cluster = e[idx].first_cluster;
   u32 old_size = e[idx].size;
-  u32 append_len = strlen(text);
   u32 new_size = old_size + append_len;
 
-  if (append_len == 0) {
-    println("appended");
-    return;
-  }
+  if (new_size < old_size)
+    return FAT_ERR_TOO_BIG;
 
-  if (new_size > MAX_FILE_BYTES) {
-    println("too big for v1");
-    return;
-  }
+  if (append_len == 0)
+    return FAT_OK;
 
-  if (first_cluster == 0) {
-    fs_write(name, text);
-    return;
-  }
+  if (new_size > MAX_FILE_BYTES)
+    return FAT_ERR_TOO_BIG;
+
+  if (first_cluster == 0)
+    return fat_write_file(name, src, append_len);
 
   u32 cluster_bytes = sec_per_clus * 512;
   u32 offset_in_cluster = old_size % cluster_bytes;
@@ -601,10 +620,8 @@ void fs_append(char *name, char *text) {
     extra_clusters_needed = (extra_bytes + cluster_bytes - 1) / cluster_bytes;
   }
 
-  if (extra_clusters_needed > count_free_clusters()) {
-    println("not enough space");
-    return;
-  }
+  if (extra_clusters_needed > count_free_clusters())
+    return FAT_ERR_NO_SPACE;
 
   u16 last_cluster = first_cluster;
   u16 next = fat_entry(last_cluster);
@@ -615,10 +632,8 @@ void fs_append(char *name, char *text) {
 
   if (offset_in_cluster == 0) {
     u16 new_clus = fat_find_free();
-    if (new_clus == 0) {
-      println("not enough space");
-      return;
-    }
+    if (new_clus == 0)
+      return FAT_ERR_NO_SPACE;
 
     fat_set_entry(last_cluster, new_clus);
     fat_set_entry(new_clus, 0xFFFF);
@@ -642,7 +657,7 @@ void fs_append(char *name, char *text) {
     u32 can_write = remaining < room ? remaining : room;
 
     char *bytes = (char *)sector_buff;
-    memory_copy(text + src_offset, bytes + byte_in_sector, can_write);
+    memory_copy((char *)src + src_offset, bytes + byte_in_sector, can_write);
 
     ata_write(data_lba + sc, 1, sector_buff);
 
@@ -654,16 +669,13 @@ void fs_append(char *name, char *text) {
   if (remaining == 0) {
     e[idx].size = new_size;
     ata_write(dir_lba, 1, buff);
-    println("appended");
-    return;
+    return FAT_OK;
   }
 
   while (remaining > 0) {
     u16 new_clus = fat_find_free();
-    if (new_clus == 0) {
-      println("not enough space");
-      return;
-    }
+    if (new_clus == 0)
+      return FAT_ERR_NO_SPACE;
 
     fat_set_entry(current_cluster, new_clus);
     fat_set_entry(new_clus, 0xFFFF);
@@ -675,7 +687,7 @@ void fs_append(char *name, char *text) {
       memory_set((u8 *)sector_buff, 0, 512);
 
       u32 chunk = remaining < 512 ? remaining : 512;
-      memory_copy(text + src_offset, (char *)sector_buff, chunk);
+      memory_copy((char *)src + src_offset, (char *)sector_buff, chunk);
 
       ata_write(data_lba + sc, 1, sector_buff);
 
@@ -686,7 +698,24 @@ void fs_append(char *name, char *text) {
 
   e[idx].size = new_size;
   ata_write(dir_lba, 1, buff);
-  println("appended");
+  return FAT_OK;
+}
+
+void fs_append(char *name, char *text) {
+  int ret = fat_append_file(name, (u8 *)text, strlen(text));
+
+  if (ret == FAT_OK)
+    println("appended");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid 8.3 name");
+  else if (ret == FAT_ERR_NOT_FOUND)
+    println("no such file");
+  else if (ret == FAT_ERR_TOO_BIG)
+    println("too big for v1");
+  else if (ret == FAT_ERR_NO_SPACE)
+    println("not enough space");
+  else
+    println("append failed");
 }
 
 void fs_rename(char *name, char *new_name) {

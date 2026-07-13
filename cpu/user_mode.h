@@ -128,6 +128,7 @@ int user_fd_open_current(char *path, u32 flags);
 int user_fd_read_current(int fd, u8 *dst, u32 len);
 int user_fd_close_current(int fd);
 int user_fd_write_current(int fd, u8 *src, u32 len);
+int user_fd_lseek_current(int fd, u32 offset, u32 whence);
 
 int user_stat_path(char *path, user_stat_t *out);
 
