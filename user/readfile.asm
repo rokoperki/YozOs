@@ -2,10 +2,11 @@ bits 32
 org 0x70000
 
 SYS_EXIT equ 2
-SYS_WRITE_BUFFER equ 4
+SYS_WRITE equ 14
 SYS_OPEN equ 11
 SYS_READ equ 12
 SYS_CLOSE equ 13
+USER_O_RDONLY equ 0
 
     db "YOZ1"
     dd 0x70000
@@ -15,7 +16,7 @@ SYS_CLOSE equ 13
 start:
     mov eax, SYS_OPEN
     mov ebx, path
-    xor ecx, ecx
+    mov ecx, USER_O_RDONLY
     xor edx, edx
     int 0x80
 
@@ -39,10 +40,10 @@ start:
 
     mov [bytes_read], eax
 
-    mov eax, SYS_WRITE_BUFFER
-    mov ebx, buffer
-    mov ecx, [bytes_read]
-    xor edx, edx
+    mov eax, SYS_WRITE
+    mov ebx, 1
+    mov ecx, buffer
+    mov edx, [bytes_read]
     int 0x80
 
     jmp .read_loop
@@ -61,10 +62,10 @@ close_and_exit:
     int 0x80
 
 open_failed:
-    mov eax, SYS_WRITE_BUFFER
-    mov ebx, open_msg
-    mov ecx, open_msg_len
-    xor edx, edx
+    mov eax, SYS_WRITE
+    mov ebx, 2
+    mov ecx, open_msg
+    mov edx, open_msg_len
     int 0x80
 
     mov eax, SYS_EXIT
@@ -74,10 +75,10 @@ open_failed:
     int 0x80
 
 read_failed:
-    mov eax, SYS_WRITE_BUFFER
-    mov ebx, read_msg
-    mov ecx, read_msg_len
-    xor edx, edx
+    mov eax, SYS_WRITE
+    mov ebx, 2
+    mov ecx, read_msg
+    mov edx, read_msg_len
     int 0x80
 
     mov eax, SYS_CLOSE

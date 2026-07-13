@@ -3,6 +3,7 @@
 
 #include "../memory/paging.h"
 #include "types.h"
+#include "user_abi.h"
 
 struct task;
 
@@ -123,9 +124,12 @@ u32 user_waitpid_status(u32 pid);
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
 int run_user_file(char *name);
 
-int user_fd_open_current(char *path);
+int user_fd_open_current(char *path, u32 flags);
 int user_fd_read_current(int fd, u8 *dst, u32 len);
 int user_fd_close_current(int fd);
+int user_fd_write_current(int fd, u8 *src, u32 len);
+
+int user_stat_path(char *path, user_stat_t *out);
 
 #define MAX_USER_PROCESSES 8
 

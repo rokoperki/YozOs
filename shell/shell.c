@@ -410,7 +410,7 @@ static void cmd_run(char *a) {
 
 void cmd_vfstest(char *a) {
   UNUSED(a);
-  int h = vfs_open("TEST.TXT");
+  int h = vfs_open("TEST.TXT", USER_O_RDONLY);
 
   if (h < 0) {
     println("vfs open failed");

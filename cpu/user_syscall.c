@@ -39,10 +39,20 @@ u32 sys_getppid(void) { return syscall3(SYS_GETPPID, 0, 0, 0); }
 
 u32 sys_kill(u32 pid) { return syscall3(SYS_KILL, pid, 0, 0); }
 
-u32 sys_open(char *path) { return syscall3(SYS_OPEN, (u32)path, 0, 0); }
+u32 sys_open(char *path, u32 flags) {
+  return syscall3(SYS_OPEN, (u32)path, flags, 0);
+}
 
 u32 sys_read(u32 fd, char *buff, u32 len) {
   return syscall3(SYS_READ, fd, (u32)buff, len);
 }
 
 u32 sys_close(u32 fd) { return syscall3(SYS_CLOSE, fd, 0, 0); }
+
+u32 sys_write(u32 fd, char *buff, u32 len) {
+  return syscall3(SYS_WRITE, fd, (u32)buff, len);
+}
+
+u32 sys_stat(char *path, user_stat_t *out) {
+  return syscall3(SYS_STAT, (u32)path, (u32)out, 0);
+}

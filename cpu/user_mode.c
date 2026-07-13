@@ -885,7 +885,7 @@ int run_user_file(char *name) {
   return 0;
 }
 
-int user_fd_open_current(char *path) {
+int user_fd_open_current(char *path, u32 flags) {
   if (!current_user_process)
     return -1;
 
@@ -893,7 +893,7 @@ int user_fd_open_current(char *path) {
   if (fd < 0)
     return -1;
 
-  int handle = vfs_open(path);
+  int handle = vfs_open(path, flags);
   if (handle < 0)
     return handle;
 
@@ -910,10 +910,53 @@ int user_fd_read_current(int fd, u8 *dst, u32 len) {
   if (fd < 0 || fd >= USER_MAX_FDS)
     return -1;
 
+  if (!dst && len > 0)
+    return -1;
+
   user_fd_t *entry = &current_user_process->fds[fd];
+
+  if (entry->type == USER_FD_TYPE_STDIN) {
+    if (len == 0)
+      return 0;
+
+    if (!keyboard_line_ready())
+      return 0;
+
+    char *src = keyboard_get_line();
+
+    u32 i = 0;
+    while (i < len && src[i]) {
+      dst[i] = src[i];
+      i++;
+    }
+
+    keyboard_clear_line();
+    return i;
+  }
 
   if (entry->type == USER_FD_TYPE_VFS)
     return vfs_read(entry->vfs_handle, dst, len);
+
+  return -1;
+}
+
+int user_fd_write_current(int fd, u8 *src, u32 len) {
+  if (!current_user_process)
+    return -1;
+
+  if (fd < 0 || fd >= USER_MAX_FDS)
+    return -1;
+
+  user_fd_t *entry = &current_user_process->fds[fd];
+
+  if (entry->type == USER_FD_TYPE_STDOUT ||
+      entry->type == USER_FD_TYPE_STDERR) {
+    for (u32 i = 0; i < len; i++) {
+      print_char(src[i], -1, -1, WHITE_ON_BLACK);
+    }
+
+    return len;
+  }
 
   return -1;
 }
@@ -936,4 +979,21 @@ int user_fd_close_current(int fd) {
   entry->vfs_handle = -1;
 
   return ret;
+}
+
+int user_stat_path(char *path, user_stat_t *out) {
+  if (!current_user_process)
+    return -1;
+
+  if (!out)
+    return -1;
+
+  vfs_stat_t st;
+  int ret = vfs_stat(path, &st);
+  if (ret < 0)
+    return ret;
+
+  out->size = st.size;
+  out->type = USER_STAT_TYPE_FILE;
+  return 0;
 }

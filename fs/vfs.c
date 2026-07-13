@@ -1,4 +1,5 @@
 #include "vfs.h"
+#include "../cpu/user_abi.h"
 #include "../kernel/mem.h"
 #include "../kernel/string.h"
 #include "fat.h"
@@ -43,9 +44,12 @@ static int find_free_handle(void) {
   return -1;
 }
 
-int vfs_open(const char *path) {
+int vfs_open(const char *path, u32 flags) {
   char name[VFS_MAX_NAME];
   fat_file_info_t info;
+
+  if (flags != USER_O_RDONLY)
+    return VFS_ERR_INVALID;
 
   if (!normalize_path(path, name))
     return VFS_ERR_INVALID;
@@ -98,5 +102,26 @@ int vfs_close(int handle) {
     return VFS_ERR_INVALID;
 
   open_files[handle].used = 0;
+  return 0;
+}
+
+int vfs_stat(const char *path, vfs_stat_t *out) {
+  char name[VFS_MAX_NAME];
+  fat_file_info_t info;
+
+  if (!out)
+    return VFS_ERR_INVALID;
+
+  out->size = 0;
+  out->type = 0;
+
+  if (!normalize_path(path, name))
+    return VFS_ERR_INVALID;
+
+  if (!fat_stat_file(name, &info))
+    return VFS_ERR_NOT_FOUND;
+
+  out->size = info.size;
+  out->type = VFS_STAT_TYPE_FILE;
   return 0;
 }

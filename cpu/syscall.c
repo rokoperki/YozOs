@@ -125,7 +125,7 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     if (!copy_user_cstring(arg1, path, VFS_MAX_PATH))
       return 0xFFFFFFFF;
 
-    return user_fd_open_current(path);
+    return user_fd_open_current(path, arg2);
   }
 
   if (num == SYS_READ) {
@@ -140,6 +140,28 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
 
   if (num == SYS_CLOSE) {
     return user_fd_close_current((int)arg1);
+  }
+
+  if (num == SYS_WRITE) {
+    if (arg3 > MAX_USER_BUFFER)
+      return 0xFFFFFFFF;
+
+    if (!user_memory_ok(arg2, arg3, USER_REGION_READ))
+      return 0xFFFFFFFF;
+
+    return user_fd_write_current((int)arg1, (u8 *)arg2, arg3);
+  }
+
+  if (num == SYS_STAT) {
+    char path[VFS_MAX_PATH];
+
+    if (!copy_user_cstring(arg1, path, VFS_MAX_PATH))
+      return 0xFFFFFFFF;
+
+    if (!user_memory_ok(arg2, sizeof(user_stat_t), USER_REGION_WRITE))
+      return 0xFFFFFFFF;
+
+    return user_stat_path(path, (user_stat_t *)arg2);
   }
 
   return 0xFFFFFFFF;

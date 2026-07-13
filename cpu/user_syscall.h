@@ -2,6 +2,7 @@
 #define USER_SYSCALL_H
 
 #include "types.h"
+#include "user_abi.h"
 
 u32 user_read_line(char *buff, u32 max_len);
 u32 user_write_char(char c);
@@ -13,8 +14,10 @@ u32 sys_getpid(void);
 u32 sys_getppid(void);
 u32 sys_waitpid(u32 pid);
 u32 sys_kill(u32 pid);
-u32 sys_open(char *path);
+u32 sys_open(char *path, u32 flags);
 u32 sys_read(u32 fd, char *buff, u32 len);
 u32 sys_close(u32 fd);
+u32 sys_write(u32 fd, char *buff, u32 len);
+u32 sys_stat(char *path, user_stat_t *out);
 
 #endif
