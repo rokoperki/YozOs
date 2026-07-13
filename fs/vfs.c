@@ -4,7 +4,6 @@
 #include "fat.h"
 
 static vfs_file_t open_files[VFS_MAX_OPEN_FILES];
-static u8 read_buf[VFS_MAX_FILE_BYTES];
 
 void vfs_init(void) { memory_set((u8 *)open_files, 0, sizeof(open_files)); }
 

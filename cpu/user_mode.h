@@ -36,6 +36,24 @@ struct task;
 
 #define USER_MAX_IMAGE_FRAMES 2
 
+#define USER_MAX_FDS 8
+
+#define USER_FD_STDIN 0
+#define USER_FD_STDOUT 1
+#define USER_FD_STDERR 2
+#define USER_FD_FIRST_FILE 3
+
+#define USER_FD_TYPE_UNUSED 0
+#define USER_FD_TYPE_STDIN 1
+#define USER_FD_TYPE_STDOUT 2
+#define USER_FD_TYPE_STDERR 3
+#define USER_FD_TYPE_VFS 4
+
+typedef struct {
+  int type;
+  int vfs_handle;
+} user_fd_t;
+
 typedef struct {
   u32 start;
   u32 len;
@@ -72,6 +90,8 @@ typedef struct user_process {
   u32 image_frame_count;
   user_region_t loaded_regions[2];
   user_program_t loaded_program;
+  user_fd_t fds[USER_MAX_FDS];
+
 } user_process_t;
 
 int run_user_process(user_process_t *process);
@@ -102,6 +122,10 @@ u32 user_waitpid_status(u32 pid);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
 int run_user_file(char *name);
+
+int user_fd_open_current(char *path);
+int user_fd_read_current(int fd, u8 *dst, u32 len);
+int user_fd_close_current(int fd);
 
 #define MAX_USER_PROCESSES 8
 

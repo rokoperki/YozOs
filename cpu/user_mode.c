@@ -2,6 +2,7 @@
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
 #include "../fs/fat.h"
+#include "../fs/vfs.h"
 #include "../kernel/mem.h"
 #include "../kernel/string.h"
 #include "../memory/frame_alloc.h"
@@ -46,6 +47,7 @@ static user_process_t *pending_user_fault_process;
 // process image frames before the task is started.
 
 static void init_user_fault_process(user_process_t *process);
+static void user_process_close_fds(user_process_t *process);
 static void user_file_task_entry(void);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
@@ -329,6 +331,8 @@ static void user_process_clear(user_process_t *process) {
     process->image_frame_count = 0;
   }
 
+  user_process_close_fds(process);
+
   address_space_destroy(process->address_space);
   process->address_space = 0;
   process->exit_code = 0;
@@ -357,6 +361,37 @@ static void user_process_set_name(user_process_t *process, char *name) {
   }
 
   process->name = name;
+}
+
+static void user_process_init_fds(user_process_t *process) {
+  for (int i = 0; i < USER_MAX_FDS; i++) {
+    process->fds[i].type = USER_FD_TYPE_UNUSED;
+    process->fds[i].vfs_handle = -1;
+  }
+
+  process->fds[USER_FD_STDIN].type = USER_FD_TYPE_STDIN;
+  process->fds[USER_FD_STDOUT].type = USER_FD_TYPE_STDOUT;
+  process->fds[USER_FD_STDERR].type = USER_FD_TYPE_STDERR;
+}
+
+static int user_fd_find_free(user_process_t *process) {
+  for (int i = USER_FD_FIRST_FILE; i < USER_MAX_FDS; i++) {
+    if (process->fds[i].type == USER_FD_TYPE_UNUSED)
+      return i;
+  }
+
+  return -1;
+}
+
+static void user_process_close_fds(user_process_t *process) {
+  for (int i = USER_FD_FIRST_FILE; i < USER_MAX_FDS; i++) {
+    if (process->fds[i].type == USER_FD_TYPE_VFS) {
+      vfs_close(process->fds[i].vfs_handle);
+    }
+
+    process->fds[i].type = USER_FD_TYPE_UNUSED;
+    process->fds[i].vfs_handle = -1;
+  }
 }
 
 int run_user_program(address_space_t *space, user_program_t *program) {
@@ -413,6 +448,7 @@ int run_user_process(user_process_t *process) {
     user_process_mark_exited(process, (u32)code);
   }
 
+  user_process_close_fds(process);
   current_user_process = 0;
 
   return code;
@@ -431,6 +467,7 @@ static void init_user_test_process(user_process_t *process) {
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  user_process_init_fds(process);
   user_process_assign_pid(process);
 }
 
@@ -482,6 +519,7 @@ static void init_user_fault_process(user_process_t *process) {
       .state = USER_PROCESS_READY,
       .exit_code = 0,
   };
+  user_process_init_fds(process);
   user_process_assign_pid(process);
 }
 
@@ -694,6 +732,7 @@ int user_process_kill_pid(u32 pid) {
   }
 
   user_process_mark_killed(p);
+  user_process_close_fds(p);
   println("process killed");
   return USER_KILL_OK;
 }
@@ -811,6 +850,7 @@ int run_user_file(char *name) {
   };
   build_loaded_user_program(process, loaded_len, entry);
 
+  user_process_init_fds(process);
   user_process_assign_pid(process);
   user_process_set_name(process, name);
 
@@ -843,4 +883,57 @@ int run_user_file(char *name) {
   task_set_address_space(task, process->address_space);
 
   return 0;
+}
+
+int user_fd_open_current(char *path) {
+  if (!current_user_process)
+    return -1;
+
+  int fd = user_fd_find_free(current_user_process);
+  if (fd < 0)
+    return -1;
+
+  int handle = vfs_open(path);
+  if (handle < 0)
+    return handle;
+
+  current_user_process->fds[fd].type = USER_FD_TYPE_VFS;
+  current_user_process->fds[fd].vfs_handle = handle;
+
+  return fd;
+}
+
+int user_fd_read_current(int fd, u8 *dst, u32 len) {
+  if (!current_user_process)
+    return -1;
+
+  if (fd < 0 || fd >= USER_MAX_FDS)
+    return -1;
+
+  user_fd_t *entry = &current_user_process->fds[fd];
+
+  if (entry->type == USER_FD_TYPE_VFS)
+    return vfs_read(entry->vfs_handle, dst, len);
+
+  return -1;
+}
+
+int user_fd_close_current(int fd) {
+  if (!current_user_process)
+    return -1;
+
+  if (fd < 0 || fd >= USER_MAX_FDS)
+    return -1;
+
+  user_fd_t *entry = &current_user_process->fds[fd];
+
+  if (entry->type != USER_FD_TYPE_VFS)
+    return -1;
+
+  int ret = vfs_close(entry->vfs_handle);
+
+  entry->type = USER_FD_TYPE_UNUSED;
+  entry->vfs_handle = -1;
+
+  return ret;
 }

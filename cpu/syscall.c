@@ -1,6 +1,8 @@
 #include "syscall.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
+#include "../fs/vfs.h"
+#include "../kernel/string.h"
 #include "../task/task.h"
 #include "idt.h"
 #include "user_mode.h"
@@ -29,9 +31,22 @@ void syscall_install(void) {
   set_idt_gate_flags(SYSCALL_INT, (u32)syscall_stub, 0xEE);
 }
 
-u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
-  (void)arg3;
+static int copy_user_cstring(u32 ptr, char *dst, u32 max_len) {
+  if (!user_cstring_ok(ptr))
+    return 0;
 
+  for (u32 i = 0; i < max_len; i++) {
+    dst[i] = ((char *)ptr)[i];
+
+    if (dst[i] == '\0')
+      return 1;
+  }
+
+  dst[max_len - 1] = '\0';
+  return 0;
+}
+
+u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
   if (num == SYS_WRITE_CHAR) {
     print_char((char)arg1, -1, -1, WHITE_ON_BLACK);
     return 0;
@@ -102,6 +117,29 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
 
   if (num == SYS_KILL) {
     return user_process_kill_pid(arg1);
+  }
+
+  if (num == SYS_OPEN) {
+    char path[VFS_MAX_PATH];
+
+    if (!copy_user_cstring(arg1, path, VFS_MAX_PATH))
+      return 0xFFFFFFFF;
+
+    return user_fd_open_current(path);
+  }
+
+  if (num == SYS_READ) {
+    if (arg3 > MAX_USER_BUFFER)
+      return 0xFFFFFFFF;
+
+    if (!user_memory_ok(arg2, arg3, USER_REGION_WRITE))
+      return 0xFFFFFFFF;
+
+    return user_fd_read_current((int)arg1, (u8 *)arg2, arg3);
+  }
+
+  if (num == SYS_CLOSE) {
+    return user_fd_close_current((int)arg1);
   }
 
   return 0xFFFFFFFF;

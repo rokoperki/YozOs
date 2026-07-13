@@ -13,5 +13,8 @@ u32 sys_getpid(void);
 u32 sys_getppid(void);
 u32 sys_waitpid(u32 pid);
 u32 sys_kill(u32 pid);
+u32 sys_open(char *path);
+u32 sys_read(u32 fd, char *buff, u32 len);
+u32 sys_close(u32 fd);
 
 #endif
