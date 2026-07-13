@@ -7,57 +7,32 @@ cross-compiler; runs in QEMU and on real Legacy-BIOS hardware.
 
 ## Status
 
-Done so far:
+YozOs currently boots a custom BIOS loader into a 32-bit C kernel with IDT/PIC
+interrupts, PIT timer ticks, keyboard input, paging, preemptive tasks,
+per-process address spaces, and ring-3 user programs.
 
-- **Boot → C kernel** — boot sector loads the kernel at `0x10000`, switches to
-  32-bit protected mode (GDT + `cr0.PE`), and calls `main()`.
-- **Interrupts** — IDT with the 32 CPU exceptions; PIC remapped, IRQ stubs and
-  dispatcher (EOIs + registered handlers).
-- **Keyboard + shell** — IRQ1 driver decodes scancodes into a line buffer and
-  publishes completed lines; the kernel main loop dispatches shell commands
-  outside interrupt context. The table-driven `yozOS >` shell supports `HELP`,
-  `END`, `MMAP`, `FALLOC`, `PTEST`, `TASKTEST`, `TASKS`, `REAP`, `PROCS`,
-  `USERTEST`, `USERFAULT`, `RUN <file>`, `IDENT`, `RSECT`, `WSECT`, `FSINFO`, `LS`,
-  `CAT <file>`, `CREATE <file>`, `WRITE <file> <text>`, `WRITEPAT <file>
-  <size>`, `DELETE <file>`, `APPEND <file> <text>`, `RENAME <file> <text>`.
-- **Timer** — PIT channel 0 (square-wave) counting ticks via IRQ0.
-- **Paging + address spaces** — E820 memory detection → bitmap frame allocator
-  → identity-map of the first 4 MiB → `CR3` + `CR0.PG`. A page-fault handler
-  (ISR 14) reports the `CR2` address; `PTEST` proves the MMU is live. User
-  processes now get their own page directory and low page table, and tasks carry
-  an address-space pointer so the scheduler switches `CR3` during task switches.
-- **Multitasking** — `task_t` contexts with an asm `switch_context`; preemptive
-  switching driven off the timer IRQ. The scheduler now has a boot-time
-  main/idle task model, task states, a fixed task table, `spawn_task()`, exited
-  task reaping, and debug shell commands (`TASKS`, `REAP`). `TASKTEST` is a
-  finite rerunnable scheduler smoke test.
-- **Disk + filesystem** — ATA PIO (LBA28) driver: `IDENTIFY`, sector read/write
-  (`IDENT`/`RSECT`/`WSECT`). On top of it, a FAT16 driver parses the BPB
-  (`FSINFO`), lists the root directory (`LS`), reads files by name
-  (`CAT <file>`), and supports simple root-directory writes (`CREATE`, `WRITE`,
-  `DELETE`, `APPEND`, `RENAME`) on a FAT-formatted data disk.
-  FAT support is intentionally scoped to the root directory, 8.3 filenames, and
-  files up to 8 KiB.
-- **Userspace bring-up** — the kernel installs a C-managed final GDT with ring-3
-  code/data descriptors, loads a TSS (`ltr`) for ring-3 to ring-0 stack
-  switching, enters user programs with `iret`, and handles `int 0x80` syscalls:
-  `SYS_WRITE_CHAR`, `SYS_STRING_WRITE`, `SYS_WRITE_BUFFER`, `SYS_READ_LINE`,
-  `SYS_EXIT`, `SYS_YIELD`, `SYS_GETPID`, `SYS_GETPPID`, `SYS_WAITPID`, and
-  `SYS_KILL`. The syscall stub saves/restores user register and segment state,
-  switches to kernel data segments for the C handler, and returns values through
-  the interrupted user's `eax`. Syscall pointer arguments are validated against
-  the current process address space and declared region permissions. Keyboard
-  input has shell/user ownership so `SYS_READ_LINE` can read a line while the
-  shell is not consuming it. `USERTEST` and `USERFAULT` run as scheduler-owned
-  tasks that enter ring 3, report async exit/fault status, and are tracked in a
-  small user-process table visible through `PROCS`. `RUN <file>` loads a
-  headered `YOZ1` flat binary from the FAT16 data disk, validates its
-  magic/load address/entry/size, copies the image into private process frames,
-  maps those frames at the fixed user virtual address (`0x70000`), gives the
-  process a private user stack frame, and enters it in ring 3. External test
-  programs now cover output (`HELLO.BIN`), input (`ECHO.BIN`), and user fault
-  handling (`FAULT.BIN`). `PROCS` and `TASKS` show address-space/process linkage
-  and user frame ownership for debugging.
+The kernel can load headered `YOZ1` flat binaries from a FAT16 data disk and run
+them as scheduler-owned user processes. Userland has a small process/syscall
+surface (`getpid`, `getppid`, `waitpid`, `kill`, `yield`, `exit`) plus
+fd-oriented I/O: `open`, `read`, `write`, `close`, `stat`, and `lseek`.
+
+Storage is intentionally simple: ATA PIO + FAT16 root-directory support, wrapped
+by a small VFS layer. FAT is limited to 8.3 names, root-directory paths, and
+files up to 8 KiB, but supports shell and userland read/write/append tests.
+
+Current external user tests cover basic output/input, process syscalls, user
+faults, fd stdin/stdout, file read/write/append, stat, and seek:
+`HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
+`KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
+`APPEND.BIN`, and `SEEK.BIN`.
+
+Current limits:
+
+- Executables are custom flat `YOZ1` binaries, not ELF yet.
+- The filesystem has no directories, current working directory, or long names.
+- File writes are basic truncate/append paths; general write-at-offset semantics
+  are still limited.
+- Syscall errors still need a stable errno-style ABI.
 
 ## Layout
 
@@ -70,9 +45,9 @@ Done so far:
 | `kernel/`  | Freestanding helpers: `string.c` (`strlen`/`strcmp`/`append`/`int_to_ascii`), `mem.c` (`memory_copy`/`memory_set`) |
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
-| `fs/`      | FAT16: `fat.c` (BPB parse, root-dir list/read/create/write/append/delete/rename; 8.3 names, 8 KiB files)           |
+| `fs/`      | FAT16 + VFS: root-dir list/read/create/write/append/delete/rename, stat, seek, fd-backed reads/writes; 8.3 names, 8 KiB files |
 | `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
-| `user/`    | External `YOZ1` flat user binaries: `HELLO.BIN`, `ECHO.BIN`, and `FAULT.BIN`                                      |
+| `user/`    | External `YOZ1` flat user binaries for output, input, process, fault, and fd/VFS syscall tests                    |
 | `tools/`   | Host-side helper scripts, including a small FAT16 image installer for test binaries                                |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
@@ -116,6 +91,12 @@ Then run this in the YozOs shell:
 RUN HELLO.BIN
 RUN ECHO.BIN
 RUN FAULT.BIN
+RUN READFILE.BIN
+RUN ECHOFD.BIN
+RUN STAT.BIN
+RUN WRITEF.BIN
+RUN APPEND.BIN
+RUN SEEK.BIN
 ```
 
 ## Booting on real hardware

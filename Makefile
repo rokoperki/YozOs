@@ -109,7 +109,13 @@ USER_PID_BIN := user/PID.BIN
 USER_WAITSELF_BIN := user/WAITSELF.BIN
 USER_PPID_BIN := user/PPID.BIN
 USER_KILLSELF_BIN := user/KILLSELF.BIN
-USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN)
+USER_READFILE_BIN := user/READFILE.BIN
+USER_ECHOFD_BIN := user/ECHOFD.BIN
+USER_STAT_BIN := user/STAT.BIN
+USER_WRITEFILE_BIN := user/WRITEF.BIN
+USER_APPEND_BIN := user/APPEND.BIN
+USER_SEEK_BIN := user/SEEK.BIN
+USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN) $(USER_READFILE_BIN) $(USER_ECHOFD_BIN) $(USER_STAT_BIN) $(USER_WRITEFILE_BIN) $(USER_APPEND_BIN) $(USER_SEEK_BIN)
 
 $(USER_HELLO_BIN): user/hello.asm
 	$(ASM) $< -f bin -o $@
@@ -132,6 +138,24 @@ $(USER_PPID_BIN): user/ppid.asm
 $(USER_KILLSELF_BIN): user/killself.asm
 		$(ASM) $< -f bin -o $@
 
+$(USER_READFILE_BIN): user/readfile.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_ECHOFD_BIN): user/echofd.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_STAT_BIN): user/stat.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_WRITEFILE_BIN): user/writefile.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_APPEND_BIN): user/append.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_SEEK_BIN): user/seek.asm
+	$(ASM) $< -f bin -o $@
+
 user-programs: $(USER_BINS)
 
 install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
@@ -145,6 +169,12 @@ install-user-programs: $(DISK_IMG) $(USER_BINS)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WAITSELF_BIN) WAITSELF.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PPID_BIN) PPID.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_KILLSELF_BIN) KILLSELF.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_READFILE_BIN) READFILE.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHOFD_BIN) ECHOFD.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_STAT_BIN) STAT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WRITEFILE_BIN) WRITEF.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_APPEND_BIN) APPEND.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_SEEK_BIN) SEEK.BIN
 
 prepare-user-disk: $(OS_IMAGE) install-user-programs
 
