@@ -5,6 +5,7 @@
 #include "../kernel/string.h"
 #include "../task/task.h"
 #include "idt.h"
+#include "user_error.h"
 #include "user_mode.h"
 
 #define MAX_USER_STRING 256
@@ -58,16 +59,16 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
 
   if (num == SYS_STRING_WRITE) {
     if (!user_cstring_ok(arg1))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
     print((char *)arg1);
     return 0;
   }
 
   if (num == SYS_WRITE_BUFFER) {
     if (arg2 > MAX_USER_BUFFER)
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
     if (!user_memory_ok(arg1, arg2, USER_REGION_READ))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     for (u32 i = 0; i < arg2; i++) {
       print_char(((char *)arg1)[i], -1, -1, WHITE_ON_BLACK);
@@ -77,9 +78,9 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
 
   if (num == SYS_READ_LINE) {
     if (arg2 == 0 || arg2 > 256)
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
     if (!user_memory_ok(arg1, arg2, USER_REGION_WRITE))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     if (!keyboard_line_ready())
       return 0;
@@ -123,17 +124,17 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     char path[VFS_MAX_PATH];
 
     if (!copy_user_cstring(arg1, path, VFS_MAX_PATH))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     return user_fd_open_current(path, arg2);
   }
 
   if (num == SYS_READ) {
     if (arg3 > MAX_USER_BUFFER)
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     if (!user_memory_ok(arg2, arg3, USER_REGION_WRITE))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     return user_fd_read_current((int)arg1, (u8 *)arg2, arg3);
   }
@@ -144,10 +145,10 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
 
   if (num == SYS_WRITE) {
     if (arg3 > MAX_USER_BUFFER)
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     if (!user_memory_ok(arg2, arg3, USER_REGION_READ))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     return user_fd_write_current((int)arg1, (u8 *)arg2, arg3);
   }
@@ -156,10 +157,10 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     char path[VFS_MAX_PATH];
 
     if (!copy_user_cstring(arg1, path, VFS_MAX_PATH))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     if (!user_memory_ok(arg2, sizeof(user_stat_t), USER_REGION_WRITE))
-      return 0xFFFFFFFF;
+      return user_error(USER_ERR_INVAL);
 
     return user_stat_path(path, (user_stat_t *)arg2);
   }
@@ -168,5 +169,5 @@ u32 syscall_handler(u32 num, u32 arg1, u32 arg2, u32 arg3) {
     return user_fd_lseek_current((int)arg1, arg2, arg3);
   }
 
-  return 0xFFFFFFFF;
+  return user_error(USER_ERR_UNSUPPORTED);
 }

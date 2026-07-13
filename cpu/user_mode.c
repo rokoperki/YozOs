@@ -9,6 +9,7 @@
 #include "../memory/paging.h"
 #include "../task/task.h"
 #include "tss.h"
+#include "user_error.h"
 #include "user_test.h"
 
 static void prepare_user_program(address_space_t *space,
@@ -48,6 +49,7 @@ static user_process_t *pending_user_fault_process;
 
 static void init_user_fault_process(user_process_t *process);
 static void user_process_close_fds(user_process_t *process);
+static u32 user_error_from_vfs(int ret);
 static void user_file_task_entry(void);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
@@ -885,17 +887,17 @@ int run_user_file(char *name) {
   return 0;
 }
 
-int user_fd_open_current(char *path, u32 flags) {
+u32 user_fd_open_current(char *path, u32 flags) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   int fd = user_fd_find_free(current_user_process);
   if (fd < 0)
-    return -1;
+    return user_error(USER_ERR_NO_SPACE);
 
   int handle = vfs_open(path, flags);
   if (handle < 0)
-    return handle;
+    return user_error_from_vfs(handle);
 
   current_user_process->fds[fd].type = USER_FD_TYPE_VFS;
   current_user_process->fds[fd].vfs_handle = handle;
@@ -903,15 +905,15 @@ int user_fd_open_current(char *path, u32 flags) {
   return fd;
 }
 
-int user_fd_read_current(int fd, u8 *dst, u32 len) {
+u32 user_fd_read_current(int fd, u8 *dst, u32 len) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   if (fd < 0 || fd >= USER_MAX_FDS)
-    return -1;
+    return user_error(USER_ERR_BADF);
 
   if (!dst && len > 0)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   user_fd_t *entry = &current_user_process->fds[fd];
 
@@ -935,17 +937,20 @@ int user_fd_read_current(int fd, u8 *dst, u32 len) {
   }
 
   if (entry->type == USER_FD_TYPE_VFS)
-    return vfs_read(entry->vfs_handle, dst, len);
+    return user_error_from_vfs(vfs_read(entry->vfs_handle, dst, len));
 
-  return -1;
+  return user_error(USER_ERR_BADF);
 }
 
-int user_fd_write_current(int fd, u8 *src, u32 len) {
+u32 user_fd_write_current(int fd, u8 *src, u32 len) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   if (fd < 0 || fd >= USER_MAX_FDS)
-    return -1;
+    return user_error(USER_ERR_BADF);
+
+  if (!src && len > 0)
+    return user_error(USER_ERR_INVAL);
 
   user_fd_t *entry = &current_user_process->fds[fd];
 
@@ -959,59 +964,79 @@ int user_fd_write_current(int fd, u8 *src, u32 len) {
   }
 
   if (entry->type == USER_FD_TYPE_VFS)
-    return vfs_write(entry->vfs_handle, src, len);
+    return user_error_from_vfs(vfs_write(entry->vfs_handle, src, len));
 
-  return -1;
+  return user_error(USER_ERR_BADF);
 }
 
-int user_fd_close_current(int fd) {
+u32 user_fd_close_current(int fd) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   if (fd < 0 || fd >= USER_MAX_FDS)
-    return -1;
+    return user_error(USER_ERR_BADF);
 
   user_fd_t *entry = &current_user_process->fds[fd];
 
   if (entry->type != USER_FD_TYPE_VFS)
-    return -1;
+    return user_error(USER_ERR_BADF);
 
   int ret = vfs_close(entry->vfs_handle);
+  if (ret < 0)
+    return user_error_from_vfs(ret);
 
   entry->type = USER_FD_TYPE_UNUSED;
   entry->vfs_handle = -1;
 
-  return ret;
+  return USER_OK;
 }
 
-int user_fd_lseek_current(int fd, u32 offset, u32 whence) {
+u32 user_fd_lseek_current(int fd, u32 offset, u32 whence) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
-  if (fd < 0 || fd > +USER_MAX_FDS)
-    return -1;
+  if (fd < 0 || fd >= USER_MAX_FDS)
+    return user_error(USER_ERR_BADF);
 
   user_fd_t *entry = &current_user_process->fds[fd];
 
   if (entry->type != USER_FD_TYPE_VFS)
-    return -1;
+    return user_error(USER_ERR_BADF);
 
-  return vfs_lseek(entry->vfs_handle, offset, whence);
+  return user_error_from_vfs(vfs_lseek(entry->vfs_handle, offset, whence));
 }
 
-int user_stat_path(char *path, user_stat_t *out) {
+static u32 user_error_from_vfs(int ret) {
+  if (ret >= 0)
+    return (u32)ret;
+
+  if (ret == VFS_ERR_INVALID)
+    return user_error(USER_ERR_INVAL);
+  if (ret == VFS_ERR_NOT_FOUND)
+    return user_error(USER_ERR_NOT_FOUND);
+  if (ret == VFS_ERR_NO_SPACE)
+    return user_error(USER_ERR_NO_SPACE);
+  if (ret == VFS_ERR_IO)
+    return user_error(USER_ERR_IO);
+  if (ret == VFS_ERR_UNSUPPORTED)
+    return user_error(USER_ERR_UNSUPPORTED);
+
+  return user_error(USER_ERR_IO);
+}
+
+u32 user_stat_path(char *path, user_stat_t *out) {
   if (!current_user_process)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   if (!out)
-    return -1;
+    return user_error(USER_ERR_INVAL);
 
   vfs_stat_t st;
   int ret = vfs_stat(path, &st);
   if (ret < 0)
-    return ret;
+    return user_error_from_vfs(ret);
 
   out->size = st.size;
   out->type = USER_STAT_TYPE_FILE;
-  return 0;
+  return USER_OK;
 }

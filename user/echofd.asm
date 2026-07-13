@@ -31,9 +31,11 @@
       mov edx, input_buf_len
       int 0x80
 
+      cmp eax, 0xFFFFFF00
+      jae failed
+
       cmp eax, 0
       je .wait_line
-      jl failed
 
       mov [bytes_read], eax
 

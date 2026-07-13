@@ -23,8 +23,8 @@ start:
     xor edx, edx
     int 0x80
 
-    cmp eax, 0
-    jl open_failed
+    cmp eax, 0xFFFFFF00
+    jae open_failed
 
     mov [fd], eax
 
@@ -34,8 +34,8 @@ start:
     mov edx, msg_len
     int 0x80
 
-    cmp eax, 0
-    jl write_failed
+    cmp eax, 0xFFFFFF00
+    jae write_failed
 
     mov eax, SYS_CLOSE
     mov ebx, [fd]

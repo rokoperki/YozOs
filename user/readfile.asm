@@ -20,8 +20,8 @@ start:
     xor edx, edx
     int 0x80
 
-    cmp eax, 0
-    jl open_failed
+    cmp eax, 0xFFFFFF00
+    jae open_failed
 
     mov [fd], eax
 
@@ -32,8 +32,8 @@ start:
     mov edx, buffer_len
     int 0x80
 
-    cmp eax, 0
-    jl read_failed
+    cmp eax, 0xFFFFFF00
+    jae read_failed
 
     cmp eax, 0
     je close_and_exit

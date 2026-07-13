@@ -17,8 +17,8 @@ start:
     xor edx, edx
     int 0x80
 
-    cmp eax, 0
-    jl stat_failed
+    cmp eax, 0xFFFFFF00
+    jae stat_failed
 
     mov eax, SYS_WRITE
     mov ebx, 1
