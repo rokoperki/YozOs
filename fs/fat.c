@@ -11,6 +11,12 @@ static u8 sec_per_clus, num_fats;
 
 #define MAX_FILE_BYTES 8192
 #define MAX_CHAIN_CLUSTERS (MAX_FILE_BYTES / 512)
+#define FAT_NAME_BUF 13
+
+typedef struct {
+  int is_root;
+  u16 cluster;
+} fat_dir_ref_t;
 
 static char to_upper(char c) { return (c >= 'a' && c <= 'z') ? c - 32 : c; }
 
@@ -114,15 +120,18 @@ void name_from_83(const char in[11], char *out) {
   out[o] = '\0';
 }
 
-int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
+static int dir_find_in_region(u32 start_lba, u32 sector_count, char name83[11],
+                              u32 *out_lba, int *out_idx) {
   u16 buff[256];
-  for (u32 s = 0; s < root_sectors; s++) {
-    u32 lba = root_start + s;
+
+  for (u32 s = 0; s < sector_count; s++) {
+    u32 lba = start_lba + s;
     ata_read(lba, 1, buff);
     dir_entry_t *e = (dir_entry_t *)buff;
+
     for (int i = 0; i < 16; i++) {
       if (is_end_entry(&e[i]))
-        return 0; // end of dir → not found
+        return 0;
       if (is_skippable_entry(&e[i]))
         continue;
 
@@ -140,6 +149,24 @@ int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
     }
   }
   return 0;
+}
+
+int dir_find(char name83[11], u32 *out_lba, int *out_idx) {
+  return dir_find_in_region(root_start, root_sectors, name83, out_lba, out_idx);
+}
+
+static int dir_find_in_cluster(u16 cluster, char name83[11], u32 *out_lba,
+                               int *out_idx) {
+  u32 lba = data_start + (cluster - 2) * sec_per_clus;
+  return dir_find_in_region(lba, sec_per_clus, name83, out_lba, out_idx);
+}
+
+static int dir_find_in_ref(fat_dir_ref_t dir, char name83[11], u32 *out_lba,
+                           int *out_idx) {
+  if (dir.is_root)
+    return dir_find(name83, out_lba, out_idx);
+
+  return dir_find_in_cluster(dir.cluster, name83, out_lba, out_idx);
 }
 
 void fs_init() {
@@ -178,10 +205,10 @@ void fs_info() {
   println(b);
 }
 
-void fs_ls() {
+static void fs_ls_region(u32 start_lba, u32 sector_count) {
   u16 buff[256];
-  for (u32 s = 0; s < root_sectors; s++) {
-    ata_read(root_start + s, 1, buff);
+  for (u32 s = 0; s < sector_count; s++) {
+    ata_read(start_lba + s, 1, buff);
     dir_entry_t *e = (dir_entry_t *)buff;
 
     for (int i = 0; i < 16; i++) {
@@ -193,6 +220,10 @@ void fs_ls() {
       char nm[13];
       name_from_83((char *)e[i].name, nm);
       print(nm);
+
+      if (e[i].attr & 0x10)
+        print("/");
+
       print("  ");
       int_to_ascii(e[i].size, nm);
       println(nm);
@@ -200,11 +231,147 @@ void fs_ls() {
   }
 }
 
+void fs_ls(void) { fs_ls_region(root_start, root_sectors); }
+
+void fs_ls_path(char *path) {
+  if (!path || !path[0] || (path[0] == '/' && path[1] == '\0')) {
+    fs_ls();
+    return;
+  }
+
+  fat_file_info_t info;
+
+  if (!fat_stat_file(path, &info)) {
+    println("no such directory");
+    return;
+  }
+
+  if (!(info.attr & 0x10)) {
+    println("not a directory");
+    return;
+  }
+
+  if (info.first_cluster < 2) {
+    println("bad directory");
+    return;
+  }
+
+  u32 lba = data_start + (info.first_cluster - 2) * sec_per_clus;
+  fs_ls_region(lba, sec_per_clus);
+}
+
 u16 fat_entry(u32 cluster) {
   u32 off = cluster * 2;
   u16 buff[256];
   ata_read((fat_start + off / 512), 1, buff);
   return buff[(off % 512) / 2];
+}
+
+static int split_one_level_path(char *path, char *parent_name, char *leaf_name,
+                                int *has_parent) {
+  int i = 0;
+  int slash = -1;
+
+  if (!path || !path[0] || !parent_name || !leaf_name || !has_parent)
+    return 0;
+
+  if (path[0] == '/')
+    i = 1;
+
+  if (!path[i])
+    return 0;
+
+  int start = i;
+
+  for (; path[i]; i++) {
+    if (path[i] == '/') {
+      if (slash >= 0)
+        return 0;
+      slash = i;
+    }
+  }
+
+  if (slash < 0) {
+    int o = 0;
+    for (i = start; path[i]; i++) {
+      if (o >= FAT_NAME_BUF - 1)
+        return 0;
+      leaf_name[o++] = path[i];
+    }
+    leaf_name[o] = '\0';
+    parent_name[0] = '\0';
+    *has_parent = 0;
+    return name_is_valid_83(leaf_name);
+  }
+
+  if (slash == start || !path[slash + 1])
+    return 0;
+
+  int o = 0;
+  for (i = start; i < slash; i++) {
+    if (o >= FAT_NAME_BUF - 1)
+      return 0;
+    parent_name[o++] = path[i];
+  }
+  parent_name[o] = '\0';
+
+  o = 0;
+  for (i = slash + 1; path[i]; i++) {
+    if (o >= FAT_NAME_BUF - 1)
+      return 0;
+    leaf_name[o++] = path[i];
+  }
+  leaf_name[o] = '\0';
+
+  if (!name_is_valid_83(parent_name))
+    return 0;
+
+  if (!name_is_valid_83(leaf_name))
+    return 0;
+
+  *has_parent = 1;
+  return 1;
+}
+
+static int resolve_parent_dir(char *path, fat_dir_ref_t *parent,
+                              char *leaf_name) {
+  char parent_name[13];
+  int has_parent = 0;
+
+  if (!parent || !leaf_name)
+    return FAT_ERR_INVALID;
+
+  if (!split_one_level_path(path, parent_name, leaf_name, &has_parent))
+    return FAT_ERR_INVALID;
+
+  if (!has_parent) {
+    parent->is_root = 1;
+    parent->cluster = 0;
+    return FAT_OK;
+  }
+
+  char parent83[11];
+  name_to_83(parent_name, parent83);
+
+  u32 lba;
+  int idx;
+
+  if (!dir_find(parent83, &lba, &idx))
+    return FAT_ERR_NOT_FOUND;
+
+  u16 buff[256];
+  ata_read(lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  if (!(e[idx].attr & 0x10))
+    return FAT_ERR_INVALID;
+
+  if (e[idx].first_cluster < 2)
+    return FAT_ERR_INVALID;
+
+  parent->is_root = 0;
+  parent->cluster = e[idx].first_cluster;
+  return FAT_OK;
 }
 
 int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len) {
@@ -217,6 +384,9 @@ int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len) {
     return 0;
 
   if (!fat_stat_file(name, &info))
+    return 0;
+
+  if (info.attr & 0x10)
     return 0;
 
   if (offset >= info.size)
@@ -279,7 +449,8 @@ int fat_read_file(char *name, u8 *dst, u32 max_len, u32 *out_len) {
 }
 
 int fat_stat_file(char *name, fat_file_info_t *out) {
-  char target[11];
+  fat_dir_ref_t parent;
+  char leaf[13];
 
   if (!out)
     return 0;
@@ -288,15 +459,16 @@ int fat_stat_file(char *name, fat_file_info_t *out) {
   out->first_cluster = 0;
   out->attr = 0;
 
-  if (!name_is_valid_83(name))
+  if (resolve_parent_dir(name, &parent, leaf) != FAT_OK)
     return 0;
 
-  name_to_83(name, target);
+  char target[11];
+  name_to_83(leaf, target);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(target, &dir_lba, &idx))
+  if (!dir_find_in_ref(parent, target, &dir_lba, &idx))
     return 0;
 
   u16 dir_buff[256];
@@ -357,11 +529,12 @@ static u32 count_free_clusters() {
   return free_count;
 }
 
-int find_dir_free_slot(u32 *out_lba, int *out_index) {
+static int find_free_slot_in_region(u32 start_lba, u32 sector_count,
+                                    u32 *out_lba, int *out_index) {
   u16 buff[256];
 
-  for (u32 s = 0; s < root_sectors; s++) {
-    u32 lba = root_start + s;
+  for (u32 s = 0; s < sector_count; s++) {
+    u32 lba = start_lba + s;
     ata_read(lba, 1, buff);
     dir_entry_t *e = (dir_entry_t *)buff;
 
@@ -377,6 +550,24 @@ int find_dir_free_slot(u32 *out_lba, int *out_index) {
   }
 
   return 0;
+}
+
+int find_dir_free_slot(u32 *out_lba, int *out_index) {
+  return find_free_slot_in_region(root_start, root_sectors, out_lba, out_index);
+}
+
+static int find_free_slot_in_cluster(u16 cluster, u32 *out_lba,
+                                     int *out_index) {
+  u32 lba = data_start + (cluster - 2) * sec_per_clus;
+  return find_free_slot_in_region(lba, sec_per_clus, out_lba, out_index);
+}
+
+static int find_free_slot_in_ref(fat_dir_ref_t dir, u32 *out_lba,
+                                 int *out_index) {
+  if (dir.is_root)
+    return find_dir_free_slot(out_lba, out_index);
+
+  return find_free_slot_in_cluster(dir.cluster, out_lba, out_index);
 }
 
 void dir_write_entry(u32 lba, int index, char name83[11], u16 first_cluster,
@@ -405,20 +596,23 @@ static void free_chain(u16 first_cluster) {
 }
 
 int fat_create_file(char *name) {
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
 
-  if (!name_is_valid_83(name))
-    return FAT_ERR_INVALID;
+  int ret = resolve_parent_dir(name, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
 
-  name_to_83(name, n83);
+  name_to_83(leaf, n83);
 
   u32 lba;
   int idx;
 
-  if (dir_find(n83, &lba, &idx))
+  if (dir_find_in_ref(parent, n83, &lba, &idx))
     return FAT_ERR_EXISTS;
 
-  if (!find_dir_free_slot(&lba, &idx))
+  if (!find_free_slot_in_ref(parent, &lba, &idx))
     return FAT_ERR_NO_SPACE;
 
   dir_write_entry(lba, idx, n83, 0, 0, 0x20);
@@ -456,20 +650,23 @@ void fs_mkdir(char *name) {
 }
 
 int fat_mkdir(char *name) {
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
 
-  if (!name_is_valid_83(name))
-    return FAT_ERR_INVALID;
+  int ret = resolve_parent_dir(name, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
 
-  name_to_83(name, n83);
+  name_to_83(leaf, n83);
 
   u32 lba;
   int idx;
 
-  if (dir_find(n83, &lba, &idx))
+  if (dir_find_in_ref(parent, n83, &lba, &idx))
     return FAT_ERR_EXISTS;
 
-  if (!find_dir_free_slot(&lba, &idx))
+  if (!find_free_slot_in_ref(parent, &lba, &idx))
     return FAT_ERR_NO_SPACE;
 
   u16 clus = fat_find_free();
@@ -486,25 +683,35 @@ int fat_mkdir(char *name) {
     ata_write(data_lba + sc, 1, empty);
   }
 
+  char dot[11] = {'.', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+  char dotdot[11] = {'.', '.', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' ', ' '};
+  u16 parent_cluster = parent.is_root ? 0 : parent.cluster;
+
+  dir_write_entry(data_lba, 0, dot, clus, 0, 0x10);
+  dir_write_entry(data_lba, 1, dotdot, parent_cluster, 0, 0x10);
+
   dir_write_entry(lba, idx, n83, clus, 0, 0x10);
   return FAT_OK;
 }
 
 int fat_write_file(char *name, u8 *src, u32 len) {
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
-
-  if (!name_is_valid_83(name))
-    return FAT_ERR_INVALID;
 
   if (len > 0 && !src)
     return FAT_ERR_INVALID;
 
-  name_to_83(name, n83);
+  int ret = resolve_parent_dir(name, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
+
+  name_to_83(leaf, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx))
+  if (!dir_find_in_ref(parent, n83, &dir_lba, &idx))
     return FAT_ERR_NOT_FOUND;
 
   if (len > MAX_FILE_BYTES)
@@ -513,6 +720,9 @@ int fat_write_file(char *name, u8 *src, u32 len) {
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
+
+  if (e[idx].attr & 0x10)
+    return FAT_ERR_INVALID;
 
   u16 old_clus = e[idx].first_cluster;
 
@@ -576,27 +786,34 @@ int fat_write_file(char *name, u8 *src, u32 len) {
 }
 
 int fat_write_file_at(char *name, u32 offset, u8 *src, u32 len) {
-  if (!name_is_valid_83(name))
-    return FAT_ERR_INVALID;
-
   if (len > 0 && !src)
     return FAT_ERR_INVALID;
 
   if (len == 0)
     return FAT_OK;
 
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
-  name_to_83(name, n83);
+
+  int ret = resolve_parent_dir(name, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
+
+  name_to_83(leaf, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx))
+  if (!dir_find_in_ref(parent, n83, &dir_lba, &idx))
     return FAT_ERR_NOT_FOUND;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
+
+  if (e[idx].attr & 0x10)
+    return FAT_ERR_INVALID;
 
   u16 first_cluster = e[idx].first_cluster;
   u32 old_size = e[idx].size;
@@ -741,6 +958,11 @@ void fs_delete(char *name) {
   dir_entry_t *e = (dir_entry_t *)buff;
   u16 clus = e[idx].first_cluster;
 
+  if (e[idx].attr & 0x10) {
+    println("is a directory");
+    return;
+  }
+
   free_chain(clus);
 
   e[idx].name[0] = 0xE5;
@@ -749,25 +971,31 @@ void fs_delete(char *name) {
 }
 
 int fat_append_file(char *name, u8 *src, u32 append_len) {
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
-
-  if (!name_is_valid_83(name))
-    return FAT_ERR_INVALID;
 
   if (append_len > 0 && !src)
     return FAT_ERR_INVALID;
 
-  name_to_83(name, n83);
+  int ret = resolve_parent_dir(name, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
+
+  name_to_83(leaf, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx))
+  if (!dir_find_in_ref(parent, n83, &dir_lba, &idx))
     return FAT_ERR_NOT_FOUND;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
+
+  if (e[idx].attr & 0x10)
+    return FAT_ERR_INVALID;
 
   u16 first_cluster = e[idx].first_cluster;
   u32 old_size = e[idx].size;

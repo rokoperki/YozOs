@@ -60,7 +60,7 @@ static const command_t commands[] = {
     {"RSECT", cmd_rsect, "read+dump sector 0"},
     {"WSECT", cmd_wsect, "write test sector 1"},
     {"FSINFO", cmd_fsinfo, "FAT16 BPB info"},
-    {"LS", cmd_ls, "list root directory"},
+    {"LS", cmd_ls, "[dir] list directory"},
     {"CAT", cmd_cat, "<file>  print a file"},
     {"CREATE", cmd_create, "<file>  make empty file"},
     {"MKDIR", cmd_mkdir, "<dir> create root directory"},
@@ -164,8 +164,11 @@ static void cmd_fsinfo(char *a) {
 }
 
 static void cmd_ls(char *a) {
-  UNUSED(a);
-  fs_ls();
+
+  if (!a || !a[0])
+    fs_ls();
+  else
+    fs_ls_path(a);
 }
 
 static void cmd_cat(char *a) { fs_cat(a); }

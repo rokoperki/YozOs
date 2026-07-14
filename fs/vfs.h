@@ -19,7 +19,7 @@
 
 typedef struct {
   int used;
-  char name[VFS_MAX_NAME];
+  char name[VFS_MAX_PATH];
   u32 size;
   u32 offset;
   u16 first_cluster;

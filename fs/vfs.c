@@ -38,7 +38,7 @@ static int vfs_flags_valid(u32 flags) {
 
 void vfs_init(void) { memory_set((u8 *)open_files, 0, sizeof(open_files)); }
 
-static int resolve_root_path(const char *cwd, const char *path, char *out) {
+static int resolve_simple_path(const char *cwd, const char *path, char *out) {
   int i = 0;
   int o = 0;
 
@@ -65,10 +65,10 @@ static int resolve_root_path(const char *cwd, const char *path, char *out) {
     return 0;
 
   for (; path[i]; i++) {
-    if (path[i] == '/')
+    if (path[i] == '/' && !path[i + 1])
       return 0;
 
-    if (o >= VFS_MAX_NAME - 1)
+    if (o >= VFS_MAX_PATH - 1)
       return 0;
 
     out[o++] = path[i];
@@ -99,13 +99,13 @@ static int find_free_handle(void) {
 }
 
 int vfs_open_at(const char *cwd, const char *path, u32 flags) {
-  char name[VFS_MAX_NAME];
+  char name[VFS_MAX_PATH];
   fat_file_info_t info;
 
   if (!vfs_flags_valid(flags))
     return VFS_ERR_INVALID;
 
-  if (!resolve_root_path(cwd, path, name))
+  if (!resolve_simple_path(cwd, path, name))
     return VFS_ERR_INVALID;
 
   int h = find_free_handle();
@@ -148,7 +148,7 @@ int vfs_open_at(const char *cwd, const char *path, u32 flags) {
   open_files[h].readable = flags_readable(flags);
   open_files[h].writable = flags_writable(flags);
 
-  for (int i = 0; i < VFS_MAX_NAME; i++) {
+  for (int i = 0; i < VFS_MAX_PATH; i++) {
     open_files[h].name[i] = name[i];
   }
 
@@ -195,7 +195,7 @@ int vfs_close(int handle) {
 }
 
 int vfs_stat_at(const char *cwd, const char *path, vfs_stat_t *out) {
-  char name[VFS_MAX_NAME];
+  char name[VFS_MAX_PATH];
   fat_file_info_t info;
 
   if (!out)
@@ -210,7 +210,7 @@ int vfs_stat_at(const char *cwd, const char *path, vfs_stat_t *out) {
     return 0;
   }
 
-  if (!resolve_root_path(cwd, path, name))
+  if (!resolve_simple_path(cwd, path, name))
     return VFS_ERR_INVALID;
 
   if (!fat_stat_file(name, &info))
