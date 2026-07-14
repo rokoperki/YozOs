@@ -44,6 +44,20 @@ static int is_valid_name_char(char c) {
          (c >= '0' && c <= '9') || c == '_' || c == '-';
 }
 
+static int is_dot_entry(const dir_entry_t *e) {
+  return e->name[0] == '.' && e->name[1] == ' ' && e->name[2] == ' ' &&
+         e->name[3] == ' ' && e->name[4] == ' ' && e->name[5] == ' ' &&
+         e->name[6] == ' ' && e->name[7] == ' ' && e->name[8] == ' ' &&
+         e->name[9] == ' ' && e->name[10] == ' ';
+}
+
+static int is_dotdot_entry(const dir_entry_t *e) {
+  return e->name[0] == '.' && e->name[1] == '.' && e->name[2] == ' ' &&
+         e->name[3] == ' ' && e->name[4] == ' ' && e->name[5] == ' ' &&
+         e->name[6] == ' ' && e->name[7] == ' ' && e->name[8] == ' ' &&
+         e->name[9] == ' ' && e->name[10] == ' ';
+}
+
 static int name_is_valid_83(const char *name) {
   int base_len = 0;
   int ext_len = 0;
@@ -1161,4 +1175,86 @@ void fs_rename(char *name, char *new_name) {
   ata_write(dir_lba, 1, buff);
 
   println("renamed");
+}
+
+static int dir_cluster_is_empty(u16 cluster) {
+  if (cluster < 2)
+    return 0;
+
+  u16 buff[256];
+  u32 lba = data_start + (cluster - 2) * sec_per_clus;
+
+  for (u16 s = 0; s < sec_per_clus; s++) {
+    ata_read(lba + s, 1, buff);
+    dir_entry_t *e = (dir_entry_t *)buff;
+
+    for (int i = 0; i < 16; i++) {
+      if (is_end_entry(&e[i]))
+        return 1;
+
+      if (is_skippable_entry(&e[i]))
+        continue;
+
+      if (is_dot_entry(&e[i]) || is_dotdot_entry(&e[i]))
+        continue;
+
+      return 0;
+    }
+  }
+  return 1;
+}
+
+int fat_rmdir(char *path) {
+  fat_dir_ref_t parent;
+  char leaf[13];
+  char n83[11];
+
+  int ret = resolve_parent_dir(path, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
+
+  if (leaf[0] == '.')
+    return FAT_ERR_INVALID;
+
+  name_to_83(leaf, n83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find_in_ref(parent, n83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
+
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  if (!(e[idx].attr & 0x10))
+    return FAT_ERR_INVALID;
+
+  u16 clus = e[idx].first_cluster;
+
+  if (!dir_cluster_is_empty(clus))
+    return FAT_ERR_NO_SPACE;
+
+  free_chain(clus);
+
+  e[idx].name[0] = 0xE5;
+  ata_write(dir_lba, 1, buff);
+
+  return FAT_OK;
+}
+
+void fs_rmdir(char *path) {
+  int ret = fat_rmdir(path);
+
+  if (ret == FAT_OK)
+    println("directory removed");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid directory");
+  else if (ret == FAT_ERR_NOT_FOUND)
+    println("no such directory");
+  else if (ret == FAT_ERR_NOT_EMPTY)
+    println("directory not empty");
+  else
+    println("rmdir failed");
 }

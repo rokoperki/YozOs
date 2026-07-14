@@ -48,6 +48,7 @@ static void cmd_run(char *a);
 static void cmd_kill(char *a);
 static void cmd_wait(char *a);
 static void cmd_vfstest(char *a);
+static void cmd_rmdir(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -64,6 +65,7 @@ static const command_t commands[] = {
     {"CAT", cmd_cat, "<file>  print a file"},
     {"CREATE", cmd_create, "<file>  make empty file"},
     {"MKDIR", cmd_mkdir, "<dir> create root directory"},
+    {"RMDIR", cmd_rmdir, "<dir> remove empty directory"},
     {"WRITE", cmd_write, "<file> <text>  write a file"},
     {"WRITEPAT", cmd_writepat, "<file> <size>  write test pattern"},
     {"DELETE", cmd_delete, "<file>  remove a file"},
@@ -214,6 +216,15 @@ static void cmd_mkdir(char *a) {
   }
 
   fs_mkdir(a);
+}
+
+static void cmd_rmdir(char *a) {
+  if (!a || !a[0]) {
+    println("usage: RMDIR <dir>");
+    return;
+  }
+
+  fs_rmdir(a);
 }
 
 static void cmd_rename(char *a) {

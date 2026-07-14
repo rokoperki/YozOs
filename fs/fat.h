@@ -9,6 +9,7 @@
 #define FAT_ERR_NOT_FOUND -3
 #define FAT_ERR_NO_SPACE -4
 #define FAT_ERR_TOO_BIG -5
+#define FAT_ERR_NOT_EMPTY -6
 
 typedef struct {
   u8 jump[3];             // 0x00
@@ -56,6 +57,8 @@ int fat_write_file_at(char *name, u32 offset, u8 *src, u32 len);
 int fat_append_file(char *name, u8 *src, u32 len);
 int fat_mkdir(char *name);
 void fs_mkdir(char *name);
+int fat_rmdir(char *path);
+void fs_rmdir(char *path);
 void fs_ls_path(char *path);
 
 #endif

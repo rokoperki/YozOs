@@ -23,10 +23,11 @@ by a small VFS layer. FAT is limited to 8.3 names, root-directory paths, and
 files up to 8 KiB, but supports shell and userland read/write/append/seek tests.
 
 Current external user tests cover basic output/input, process syscalls, user
-faults, fd stdin/stdout, file read/write/append, stat, seek, and overwrite:
+faults, fd stdin/stdout, file read/write/append, stat, seek, overwrite, path
+resolution, and directory-aware stat types:
 `HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
 `KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
-`APPEND.BIN`, `SEEK.BIN`, and `OVERWR.BIN`.
+`APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, and `DIRSTAT.BIN`.
 
 Current limits:
 
@@ -98,6 +99,8 @@ RUN WRITEF.BIN
 RUN APPEND.BIN
 RUN SEEK.BIN
 RUN OVERWR.BIN
+RUN PATH.BIN
+RUN DIRSTAT.BIN
 ```
 
 ## Booting on real hardware
