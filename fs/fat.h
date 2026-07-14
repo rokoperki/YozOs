@@ -34,6 +34,7 @@ typedef struct {
 typedef struct {
   u32 size;
   u16 first_cluster;
+  u8 attr;
 } fat_file_info_t;
 
 void fs_init(void);
@@ -53,5 +54,7 @@ int fat_create_file(char *name);
 int fat_write_file(char *name, u8 *src, u32 len);
 int fat_write_file_at(char *name, u32 offset, u8 *src, u32 len);
 int fat_append_file(char *name, u8 *src, u32 len);
+int fat_mkdir(char *name);
+void fs_mkdir(char *name);
 
 #endif

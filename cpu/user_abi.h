@@ -4,6 +4,7 @@
 #include "types.h"
 
 #define USER_STAT_TYPE_FILE 1
+#define USER_STAT_TYPE_DIR 2
 
 #define USER_O_RDONLY 0
 #define USER_O_WRONLY 1

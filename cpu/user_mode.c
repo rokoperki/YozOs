@@ -9,6 +9,7 @@
 #include "../memory/paging.h"
 #include "../task/task.h"
 #include "tss.h"
+#include "user_abi.h"
 #include "user_error.h"
 #include "user_test.h"
 
@@ -347,6 +348,11 @@ static void user_process_clear(user_process_t *process) {
   }
 }
 
+static void user_process_init_cwd(user_process_t *process) {
+  process->cwd[0] = '/';
+  process->cwd[1] = '\0';
+}
+
 static void user_process_set_name(user_process_t *process, char *name) {
   for (int i = 0; i < MAX_USER_PROCESSES; i++) {
     if (&user_process_table[i] != process)
@@ -470,6 +476,7 @@ static void init_user_test_process(user_process_t *process) {
       .exit_code = 0,
   };
   user_process_init_fds(process);
+  user_process_init_cwd(process);
   user_process_assign_pid(process);
 }
 
@@ -522,6 +529,7 @@ static void init_user_fault_process(user_process_t *process) {
       .exit_code = 0,
   };
   user_process_init_fds(process);
+  user_process_init_cwd(process);
   user_process_assign_pid(process);
 }
 
@@ -853,6 +861,7 @@ int run_user_file(char *name) {
   build_loaded_user_program(process, loaded_len, entry);
 
   user_process_init_fds(process);
+  user_process_init_cwd(process);
   user_process_assign_pid(process);
   user_process_set_name(process, name);
 
@@ -895,7 +904,7 @@ u32 user_fd_open_current(char *path, u32 flags) {
   if (fd < 0)
     return user_error(USER_ERR_NO_SPACE);
 
-  int handle = vfs_open(path, flags);
+  int handle = vfs_open_at(current_user_process->cwd, path, flags);
   if (handle < 0)
     return user_error_from_vfs(handle);
 
@@ -1032,11 +1041,16 @@ u32 user_stat_path(char *path, user_stat_t *out) {
     return user_error(USER_ERR_INVAL);
 
   vfs_stat_t st;
-  int ret = vfs_stat(path, &st);
+  int ret = vfs_stat_at(current_user_process->cwd, path, &st);
   if (ret < 0)
     return user_error_from_vfs(ret);
 
   out->size = st.size;
-  out->type = USER_STAT_TYPE_FILE;
+
+  if (st.type == VFS_STAT_TYPE_DIR)
+    out->type = USER_STAT_TYPE_DIR;
+  else
+    out->type = USER_STAT_TYPE_FILE;
+
   return USER_OK;
 }

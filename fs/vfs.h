@@ -15,6 +15,7 @@
 #define VFS_ERR_UNSUPPORTED -5
 
 #define VFS_STAT_TYPE_FILE 1
+#define VFS_STAT_TYPE_DIR 2
 
 typedef struct {
   int used;
@@ -39,5 +40,8 @@ int vfs_close(int handle);
 int vfs_stat(const char *path, vfs_stat_t *out);
 int vfs_write(int handle, u8 *src, u32 len);
 int vfs_lseek(int handle, u32 offset, u32 whence);
+
+int vfs_open_at(const char *cwd, const char *path, u32 flags);
+int vfs_stat_at(const char *cwd, const char *path, vfs_stat_t *out);
 
 #endif

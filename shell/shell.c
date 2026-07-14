@@ -34,6 +34,7 @@ static void cmd_ls(char *a);
 static void cmd_cat(char *a);
 static void cmd_create(char *a);
 static void cmd_write(char *a);
+static void cmd_mkdir(char *a);
 static void cmd_writepat(char *a);
 static void cmd_delete(char *a);
 static void cmd_append(char *a);
@@ -62,6 +63,7 @@ static const command_t commands[] = {
     {"LS", cmd_ls, "list root directory"},
     {"CAT", cmd_cat, "<file>  print a file"},
     {"CREATE", cmd_create, "<file>  make empty file"},
+    {"MKDIR", cmd_mkdir, "<dir> create root directory"},
     {"WRITE", cmd_write, "<file> <text>  write a file"},
     {"WRITEPAT", cmd_writepat, "<file> <size>  write test pattern"},
     {"DELETE", cmd_delete, "<file>  remove a file"},
@@ -200,6 +202,15 @@ static void cmd_append(char *a) {
   }
   a[i] = '\0';
   fs_append(a, a + i + 1);
+}
+
+static void cmd_mkdir(char *a) {
+  if (!a || !a[0]) {
+    println("usage: MKDIR <dir>");
+    return;
+  }
+
+  fs_mkdir(a);
 }
 
 static void cmd_rename(char *a) {

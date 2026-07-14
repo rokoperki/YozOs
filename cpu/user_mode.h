@@ -38,6 +38,7 @@ struct task;
 #define USER_MAX_IMAGE_FRAMES 2
 
 #define USER_MAX_FDS 8
+#define USER_CWD_MAX 64
 
 #define USER_FD_STDIN 0
 #define USER_FD_STDOUT 1
@@ -92,7 +93,7 @@ typedef struct user_process {
   user_region_t loaded_regions[2];
   user_program_t loaded_program;
   user_fd_t fds[USER_MAX_FDS];
-
+  char cwd[USER_CWD_MAX];
 } user_process_t;
 
 int run_user_process(user_process_t *process);

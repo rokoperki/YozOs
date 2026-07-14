@@ -38,17 +38,30 @@ static int vfs_flags_valid(u32 flags) {
 
 void vfs_init(void) { memory_set((u8 *)open_files, 0, sizeof(open_files)); }
 
-static int normalize_path(const char *path, char *out) {
+static int resolve_root_path(const char *cwd, const char *path, char *out) {
   int i = 0;
   int o = 0;
+
+  if (!cwd || cwd[0] != '/' || cwd[1] != '\0')
+    return 0;
 
   if (!path || !path[0])
     return 0;
 
-  if (path[0] == '/')
+  if (path[0] == '/') {
     i = 1;
+  } else {
+    while (path[i] == '.' && path[i + 1] == '/')
+      i += 2;
+  }
 
   if (!path[i])
+    return 0;
+
+  if (path[i] == '.' && !path[i + 1])
+    return 0;
+
+  if (path[i] == '.' && path[i + 1] == '.')
     return 0;
 
   for (; path[i]; i++) {
@@ -65,6 +78,17 @@ static int normalize_path(const char *path, char *out) {
   return 1;
 }
 
+static int is_root_path(const char *cwd, const char *path) {
+  if (!cwd || cwd[0] != '/' || cwd[1] != '\0')
+    return 0;
+
+  if (!path || !path[0])
+    return 0;
+
+  return ((path[0] == '/' && path[1] == '\0') ||
+          (path[0] == '.' && path[1] == '\0'));
+}
+
 static int find_free_handle(void) {
   for (int i = 0; i < VFS_MAX_OPEN_FILES; i++) {
     if (!open_files[i].used)
@@ -74,14 +98,14 @@ static int find_free_handle(void) {
   return -1;
 }
 
-int vfs_open(const char *path, u32 flags) {
+int vfs_open_at(const char *cwd, const char *path, u32 flags) {
   char name[VFS_MAX_NAME];
   fat_file_info_t info;
 
   if (!vfs_flags_valid(flags))
     return VFS_ERR_INVALID;
 
-  if (!normalize_path(path, name))
+  if (!resolve_root_path(cwd, path, name))
     return VFS_ERR_INVALID;
 
   int h = find_free_handle();
@@ -102,6 +126,9 @@ int vfs_open(const char *path, u32 flags) {
     if (!exists)
       return VFS_ERR_NOT_FOUND;
   }
+
+  if (info.attr & 0x10)
+    return VFS_ERR_UNSUPPORTED;
 
   if (flags & USER_O_TRUNC) {
     int ret = fat_write_file(name, 0, 0);
@@ -126,6 +153,10 @@ int vfs_open(const char *path, u32 flags) {
   }
 
   return h;
+}
+
+int vfs_open(const char *path, u32 flags) {
+  return vfs_open_at("/", path, flags);
 }
 
 int vfs_read(int handle, u8 *dst, u32 len) {
@@ -163,7 +194,7 @@ int vfs_close(int handle) {
   return 0;
 }
 
-int vfs_stat(const char *path, vfs_stat_t *out) {
+int vfs_stat_at(const char *cwd, const char *path, vfs_stat_t *out) {
   char name[VFS_MAX_NAME];
   fat_file_info_t info;
 
@@ -173,15 +204,30 @@ int vfs_stat(const char *path, vfs_stat_t *out) {
   out->size = 0;
   out->type = 0;
 
-  if (!normalize_path(path, name))
+  if (is_root_path(cwd, path)) {
+    out->size = 0;
+    out->type = VFS_STAT_TYPE_DIR;
+    return 0;
+  }
+
+  if (!resolve_root_path(cwd, path, name))
     return VFS_ERR_INVALID;
 
   if (!fat_stat_file(name, &info))
     return VFS_ERR_NOT_FOUND;
 
   out->size = info.size;
-  out->type = VFS_STAT_TYPE_FILE;
+
+  if (info.attr & 0x10)
+    out->type = VFS_STAT_TYPE_DIR;
+  else
+    out->type = VFS_STAT_TYPE_FILE;
+
   return 0;
+}
+
+int vfs_stat(const char *path, vfs_stat_t *out) {
+  return vfs_stat_at("/", path, out);
 }
 
 int vfs_write(int handle, u8 *src, u32 len) {

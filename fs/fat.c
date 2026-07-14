@@ -286,6 +286,7 @@ int fat_stat_file(char *name, fat_file_info_t *out) {
 
   out->size = 0;
   out->first_cluster = 0;
+  out->attr = 0;
 
   if (!name_is_valid_83(name))
     return 0;
@@ -304,6 +305,7 @@ int fat_stat_file(char *name, fat_file_info_t *out) {
 
   out->size = e[idx].size;
   out->first_cluster = e[idx].first_cluster;
+  out->attr = e[idx].attr;
   return 1;
 }
 
@@ -436,6 +438,56 @@ void fs_create(char *name) {
     println("dir full");
   else
     println("create failed");
+}
+
+void fs_mkdir(char *name) {
+  int ret = fat_mkdir(name);
+
+  if (ret == FAT_OK)
+    println("directory created");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid 8.3 name");
+  else if (ret == FAT_ERR_EXISTS)
+    println("already exists");
+  else if (ret == FAT_ERR_NO_SPACE)
+    println("not enough space");
+  else
+    println("mkdir failed");
+}
+
+int fat_mkdir(char *name) {
+  char n83[11];
+
+  if (!name_is_valid_83(name))
+    return FAT_ERR_INVALID;
+
+  name_to_83(name, n83);
+
+  u32 lba;
+  int idx;
+
+  if (dir_find(n83, &lba, &idx))
+    return FAT_ERR_EXISTS;
+
+  if (!find_dir_free_slot(&lba, &idx))
+    return FAT_ERR_NO_SPACE;
+
+  u16 clus = fat_find_free();
+  if (clus == 0)
+    return FAT_ERR_NO_SPACE;
+
+  fat_set_entry(clus, 0xFFFF);
+
+  u16 empty[256];
+  memory_set((u8 *)empty, 0, 512);
+
+  u32 data_lba = data_start + (clus - 2) * sec_per_clus;
+  for (u16 sc = 0; sc < sec_per_clus; sc++) {
+    ata_write(data_lba + sc, 1, empty);
+  }
+
+  dir_write_entry(lba, idx, n83, clus, 0, 0x10);
+  return FAT_OK;
 }
 
 int fat_write_file(char *name, u8 *src, u32 len) {
