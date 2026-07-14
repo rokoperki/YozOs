@@ -15,24 +15,24 @@ The kernel can load headered `YOZ1` flat binaries from a FAT16 data disk and run
 them as scheduler-owned user processes. Userland has a small process/syscall
 surface (`getpid`, `getppid`, `waitpid`, `kill`, `yield`, `exit`) plus
 fd-oriented I/O: `open`, `read`, `write`, `close`, `stat`, and `lseek`.
+Syscall failures use a stable errno-style negative ABI shared through
+`cpu/user_abi.h`.
 
 Storage is intentionally simple: ATA PIO + FAT16 root-directory support, wrapped
 by a small VFS layer. FAT is limited to 8.3 names, root-directory paths, and
-files up to 8 KiB, but supports shell and userland read/write/append tests.
+files up to 8 KiB, but supports shell and userland read/write/append/seek tests.
 
 Current external user tests cover basic output/input, process syscalls, user
-faults, fd stdin/stdout, file read/write/append, stat, and seek:
+faults, fd stdin/stdout, file read/write/append, stat, seek, and overwrite:
 `HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
 `KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
-`APPEND.BIN`, and `SEEK.BIN`.
+`APPEND.BIN`, `SEEK.BIN`, and `OVERWR.BIN`.
 
 Current limits:
 
 - Executables are custom flat `YOZ1` binaries, not ELF yet.
 - The filesystem has no directories, current working directory, or long names.
-- File writes are basic truncate/append paths; general write-at-offset semantics
-  are still limited.
-- Syscall errors still need a stable errno-style ABI.
+- FAT writes are still capped at small fixed-size files.
 
 ## Layout
 
@@ -97,6 +97,7 @@ RUN STAT.BIN
 RUN WRITEF.BIN
 RUN APPEND.BIN
 RUN SEEK.BIN
+RUN OVERWR.BIN
 ```
 
 ## Booting on real hardware

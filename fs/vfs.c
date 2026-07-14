@@ -204,10 +204,7 @@ int vfs_write(int handle, u8 *src, u32 len) {
   if (f->flags & USER_O_APPEND) {
     ret = fat_append_file(f->name, src, len);
   } else {
-    if (f->offset != 0)
-      return VFS_ERR_UNSUPPORTED;
-
-    ret = fat_write_file(f->name, src, len);
+    ret = fat_write_file_at(f->name, f->offset, src, len);
   }
 
   if (ret != FAT_OK)
@@ -220,7 +217,10 @@ int vfs_write(int handle, u8 *src, u32 len) {
     f->first_cluster = info.first_cluster;
   }
 
-  f->offset += len;
+  if (f->flags & USER_O_APPEND)
+    f->offset = f->size;
+  else
+    f->offset += len;
   return len;
 }
 

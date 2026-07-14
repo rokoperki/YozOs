@@ -523,6 +523,134 @@ int fat_write_file(char *name, u8 *src, u32 len) {
   return FAT_OK;
 }
 
+int fat_write_file_at(char *name, u32 offset, u8 *src, u32 len) {
+  if (!name_is_valid_83(name))
+    return FAT_ERR_INVALID;
+
+  if (len > 0 && !src)
+    return FAT_ERR_INVALID;
+
+  if (len == 0)
+    return FAT_OK;
+
+  char n83[11];
+  name_to_83(name, n83);
+
+  u32 dir_lba;
+  int idx;
+
+  if (!dir_find(n83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
+
+  u16 buff[256];
+  ata_read(dir_lba, 1, buff);
+  dir_entry_t *e = (dir_entry_t *)buff;
+
+  u16 first_cluster = e[idx].first_cluster;
+  u32 old_size = e[idx].size;
+
+  if (offset > old_size)
+    return FAT_ERR_INVALID;
+
+  u32 new_size = offset + len;
+
+  if (new_size < offset)
+    return FAT_ERR_TOO_BIG;
+
+  if (new_size > MAX_FILE_BYTES)
+    return FAT_ERR_TOO_BIG;
+
+  if (first_cluster == 0) {
+    if (offset != 0)
+      return FAT_ERR_INVALID;
+
+    return fat_write_file(name, src, len);
+  }
+
+  u32 cluster_bytes = sec_per_clus * 512;
+  u32 old_cluster = (old_size + cluster_bytes - 1) / cluster_bytes;
+  u32 new_cluster = (new_size + cluster_bytes - 1) / cluster_bytes;
+
+  if (new_cluster > old_cluster) {
+    u32 extra_clusters_needed = new_cluster - old_cluster;
+
+    if (extra_clusters_needed > count_free_clusters())
+      return FAT_ERR_NO_SPACE;
+
+    u16 last_cluster = first_cluster;
+    u16 next = fat_entry(last_cluster);
+
+    while (next < 0xFFF8) {
+      last_cluster = next;
+      next = fat_entry(last_cluster);
+    }
+
+    for (u32 i = 0; i < extra_clusters_needed; i++) {
+      u16 new_clus = fat_find_free();
+      if (new_clus == 0)
+        return FAT_ERR_NO_SPACE;
+
+      fat_set_entry(last_cluster, new_clus);
+      fat_set_entry(new_clus, 0xFFFF);
+      last_cluster = new_clus;
+    }
+  }
+  u32 cluster_index = offset / cluster_bytes;
+  u32 offset_in_cluster = offset % cluster_bytes;
+  u32 sector_in_cluster = offset_in_cluster / 512;
+  u32 byte_in_sector = offset_in_cluster % 512;
+
+  u16 current_cluster = first_cluster;
+  for (u32 i = 0; i < cluster_index; i++) {
+    current_cluster = fat_entry(current_cluster);
+    if (current_cluster < 2 || current_cluster >= 0xFFF8)
+      return FAT_ERR_INVALID;
+  }
+
+  u32 remaining = len;
+  u32 src_offset = 0;
+
+  while (remaining > 0) {
+    u32 data_lba = data_start + (current_cluster - 2) * sec_per_clus;
+
+    for (u16 sc = sector_in_cluster; sc < sec_per_clus && remaining > 0; sc++) {
+      u16 sector_buff[256];
+
+      ata_read(data_lba + sc, 1, sector_buff);
+
+      u32 room = 512 - byte_in_sector;
+      u32 chunk = remaining < room ? remaining : room;
+
+      char *bytes = (char *)sector_buff;
+      memory_copy((char *)src + src_offset, bytes + byte_in_sector, chunk);
+
+      ata_write(data_lba + sc, 1, sector_buff);
+
+      remaining -= chunk;
+      src_offset += chunk;
+      byte_in_sector = 0;
+    }
+
+    sector_in_cluster = 0;
+
+    if (remaining > 0) {
+      u16 next = fat_entry(current_cluster);
+
+      if (next >= 0xFFF8)
+        return FAT_ERR_INVALID;
+
+      current_cluster = next;
+    }
+  }
+
+  if (new_size > old_size) {
+    e[idx].size = new_size;
+    ata_write(dir_lba, 1, buff);
+  }
+
+  return FAT_OK;
+}
+
 void fs_write(char *name, char *text) {
   int ret = fat_write_file(name, (u8 *)text, strlen(text));
 
