@@ -16,7 +16,7 @@ int main() {
   gdt_install();
   isr_install();
 
-  print("yozOS > ");
+  shell_print_prompt();
   init_keyboard();
   init_timer(50);
 
@@ -33,7 +33,7 @@ int main() {
     if (keyboard_line_ready() && keyboard_get_owner() == KEYBOARD_OWNER_SHELL) {
       user_input(keyboard_get_line());
       keyboard_clear_line();
-      print("yozOS > ");
+      shell_print_prompt();
     }
 
     __asm__ __volatile__("hlt");

@@ -20,6 +20,8 @@ typedef struct {
   const char *help;
 } command_t;
 
+static char shell_cwd[VFS_MAX_PATH] = "/";
+
 static void cmd_help(char *a);
 static void cmd_end(char *a);
 static void cmd_mmap(char *a);
@@ -39,6 +41,8 @@ static void cmd_writepat(char *a);
 static void cmd_delete(char *a);
 static void cmd_append(char *a);
 static void cmd_rename(char *a);
+static void cmd_cd(char *a);
+static void cmd_pwd(char *a);
 static void cmd_start_user_test(char *a);
 static void cmd_start_fault_user_test(char *a);
 static void cmd_tasks(char *a);
@@ -64,13 +68,15 @@ static const command_t commands[] = {
     {"LS", cmd_ls, "[dir] list directory"},
     {"CAT", cmd_cat, "<file>  print a file"},
     {"CREATE", cmd_create, "<file>  make empty file"},
-    {"MKDIR", cmd_mkdir, "<dir> create root directory"},
+    {"MKDIR", cmd_mkdir, "<dir> create directory"},
     {"RMDIR", cmd_rmdir, "<dir> remove empty directory"},
     {"WRITE", cmd_write, "<file> <text>  write a file"},
     {"WRITEPAT", cmd_writepat, "<file> <size>  write test pattern"},
     {"DELETE", cmd_delete, "<file>  remove a file"},
     {"APPEND", cmd_append, "<file> <text> append new text on existing in file"},
     {"RENAME", cmd_rename, "<file> <name> rename file"},
+    {"PWD", cmd_pwd, "print current directory"},
+    {"CD", cmd_cd, "<dir> change directory"},
     {"USERTEST", cmd_start_user_test, "test user mode"},
     {"USERFAULT", cmd_start_fault_user_test, "test fault user mode"},
     {"TASKS", cmd_tasks, "list tasks"},
@@ -82,6 +88,67 @@ static const command_t commands[] = {
     {"VFSTEST", cmd_vfstest, "test vfs"},
     {0, 0, 0},
 };
+
+static void shell_copy_path(char *dst, const char *src) {
+  int i = 0;
+  while (src[i] && i < VFS_MAX_PATH - 1) {
+    dst[i] = src[i];
+    i++;
+  }
+  dst[i] = '\0';
+}
+
+static int shell_resolve_path(char *input, char *out) {
+  int o = 0;
+  int i = 0;
+
+  if (!input || !input[0])
+    return 0;
+
+  if (input[0] == '.' && !input[1])
+    return 0;
+
+  if (input[0] == '.' && input[1] == '.')
+    return 0;
+
+  if (input[0] == '/') {
+    while (input[i]) {
+      if (o >= VFS_MAX_PATH - 1)
+        return 0;
+      out[o++] = input[i++];
+    }
+    out[o] = '\0';
+    return 1;
+  }
+
+  while (shell_cwd[i]) {
+    if (o >= VFS_MAX_PATH - 1)
+      return 0;
+    out[o++] = shell_cwd[i++];
+  }
+
+  if (o > 1) {
+    if (o >= VFS_MAX_PATH - 1)
+      return 0;
+    out[o++] = '/';
+  }
+
+  i = 0;
+  while (input[i]) {
+    if (o >= VFS_MAX_PATH - 1)
+      return 0;
+    out[o++] = input[i++];
+  }
+
+  out[o] = '\0';
+  return 1;
+}
+
+void shell_print_prompt(void) {
+  print("yozOS ");
+  print(shell_cwd);
+  print(" > ");
+}
 
 static void cmd_help(char *a) {
   UNUSED(a);
@@ -166,21 +233,45 @@ static void cmd_fsinfo(char *a) {
 }
 
 static void cmd_ls(char *a) {
+  char path[VFS_MAX_PATH];
 
-  if (!a || !a[0])
+  if (!a || !a[0]) {
+    shell_copy_path(path, shell_cwd);
+  } else if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  if (path[0] == '/' && path[1] == '\0')
     fs_ls();
   else
-    fs_ls_path(a);
+    fs_ls_path(path);
 }
 
-static void cmd_cat(char *a) { fs_cat(a); }
+static void cmd_cat(char *a) {
+  char path[VFS_MAX_PATH];
+
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_cat(path);
+}
 
 static void cmd_create(char *a) {
   if (strcmp(a, " ") == 0 || strlen(a) == 0) {
     println("usage CREATE <file>");
     return;
   }
-  fs_create(a);
+
+  char path[VFS_MAX_PATH];
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_create(path);
 }
 
 static void cmd_write(char *a) {
@@ -193,7 +284,14 @@ static void cmd_write(char *a) {
     return;
   }
   a[i] = '\0';
-  fs_write(a, a + i + 1);
+
+  char path[VFS_MAX_PATH];
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_write(path, a + i + 1);
 }
 
 static void cmd_append(char *a) {
@@ -206,25 +304,46 @@ static void cmd_append(char *a) {
     return;
   }
   a[i] = '\0';
-  fs_append(a, a + i + 1);
+
+  char path[VFS_MAX_PATH];
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_append(path, a + i + 1);
 }
 
 static void cmd_mkdir(char *a) {
+  char path[VFS_MAX_PATH];
+
   if (!a || !a[0]) {
     println("usage: MKDIR <dir>");
     return;
   }
 
-  fs_mkdir(a);
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_mkdir(path);
 }
 
 static void cmd_rmdir(char *a) {
+  char path[VFS_MAX_PATH];
+
   if (!a || !a[0]) {
     println("usage: RMDIR <dir>");
     return;
   }
 
-  fs_rmdir(a);
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_rmdir(path);
 }
 
 static void cmd_rename(char *a) {
@@ -232,11 +351,53 @@ static void cmd_rename(char *a) {
   while (a[i] && a[i] != ' ')
     i++;
   if (a[i] != ' ') {
-    println("usage: APPEND <file> <text>");
+    println("usage: RENAME <old> <new>");
     return;
   }
   a[i] = '\0';
-  fs_rename(a, a + i + 1);
+
+  char old_path[VFS_MAX_PATH];
+  char new_path[VFS_MAX_PATH];
+
+  if (!shell_resolve_path(a, old_path) ||
+      !shell_resolve_path(a + i + 1, new_path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_rename(old_path, new_path);
+}
+
+static void cmd_pwd(char *a) {
+  UNUSED(a);
+  println(shell_cwd);
+}
+
+static void cmd_cd(char *a) {
+  char path[VFS_MAX_PATH];
+  vfs_stat_t st;
+
+  if (!a || !a[0]) {
+    println("usage: CD <dir>");
+    return;
+  }
+
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  if (vfs_stat(path, &st) < 0) {
+    println("no such directory");
+    return;
+  }
+
+  if (st.type != VFS_STAT_TYPE_DIR) {
+    println("not a directory");
+    return;
+  }
+
+  shell_copy_path(shell_cwd, path);
 }
 
 static int parse_u32(char *s, u32 *out) {
@@ -279,10 +440,25 @@ static void cmd_writepat(char *a) {
     pattern[j] = 'A' + ((j / 512) % 26);
   pattern[size] = '\0';
 
-  fs_write(a, pattern);
+  char path[VFS_MAX_PATH];
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_write(path, pattern);
 }
 
-static void cmd_delete(char *a) { fs_delete(a); }
+static void cmd_delete(char *a) {
+  char path[VFS_MAX_PATH];
+
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  fs_delete(path);
+}
 
 void user_input(char *input) {
   char *args = input;

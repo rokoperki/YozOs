@@ -52,6 +52,8 @@ void fs_rename(char *name, char *new_name);
 int fat_stat_file(char *name, fat_file_info_t *out);
 int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len);
 int fat_create_file(char *name);
+int fat_delete_file(char *path);
+int fat_rename_file(char *old_path, char *new_path);
 int fat_write_file(char *name, u8 *src, u32 len);
 int fat_write_file_at(char *name, u32 offset, u8 *src, u32 len);
 int fat_append_file(char *name, u8 *src, u32 len);

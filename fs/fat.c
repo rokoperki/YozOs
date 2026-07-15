@@ -93,14 +93,6 @@ static int name_is_valid_83(const char *name) {
   return base_len > 0;
 }
 
-static int require_valid_name(const char *name) {
-  if (name_is_valid_83(name))
-    return 1;
-
-  println("invalid 8.3 name");
-  return 0;
-}
-
 void name_to_83(const char *in, char out[11]) {
   for (int i = 0; i < 11; i++)
     out[i] = ' ';
@@ -181,6 +173,10 @@ static int dir_find_in_ref(fat_dir_ref_t dir, char name83[11], u32 *out_lba,
     return dir_find(name83, out_lba, out_idx);
 
   return dir_find_in_cluster(dir.cluster, name83, out_lba, out_idx);
+}
+
+static int same_dir_ref(fat_dir_ref_t a, fat_dir_ref_t b) {
+  return a.is_root == b.is_root && a.cluster == b.cluster;
 }
 
 void fs_init() {
@@ -281,111 +277,111 @@ u16 fat_entry(u32 cluster) {
   return buff[(off % 512) / 2];
 }
 
-static int split_one_level_path(char *path, char *parent_name, char *leaf_name,
-                                int *has_parent) {
-  int i = 0;
-  int slash = -1;
-
-  if (!path || !path[0] || !parent_name || !leaf_name || !has_parent)
-    return 0;
-
-  if (path[0] == '/')
-    i = 1;
-
-  if (!path[i])
-    return 0;
-
-  int start = i;
-
-  for (; path[i]; i++) {
-    if (path[i] == '/') {
-      if (slash >= 0)
-        return 0;
-      slash = i;
-    }
-  }
-
-  if (slash < 0) {
-    int o = 0;
-    for (i = start; path[i]; i++) {
-      if (o >= FAT_NAME_BUF - 1)
-        return 0;
-      leaf_name[o++] = path[i];
-    }
-    leaf_name[o] = '\0';
-    parent_name[0] = '\0';
-    *has_parent = 0;
-    return name_is_valid_83(leaf_name);
-  }
-
-  if (slash == start || !path[slash + 1])
-    return 0;
-
+static int path_next_component(char *path, int *pos, char *out) {
   int o = 0;
-  for (i = start; i < slash; i++) {
-    if (o >= FAT_NAME_BUF - 1)
-      return 0;
-    parent_name[o++] = path[i];
-  }
-  parent_name[o] = '\0';
 
-  o = 0;
-  for (i = slash + 1; path[i]; i++) {
-    if (o >= FAT_NAME_BUF - 1)
-      return 0;
-    leaf_name[o++] = path[i];
-  }
-  leaf_name[o] = '\0';
+  while (path[*pos] == '/')
+    (*pos)++;
 
-  if (!name_is_valid_83(parent_name))
+  if (!path[*pos])
     return 0;
 
-  if (!name_is_valid_83(leaf_name))
-    return 0;
+  while (path[*pos] && path[*pos] != '/') {
+    if (o >= FAT_NAME_BUF - 1)
+      return -1;
+    out[o++] = path[*pos];
+    (*pos)++;
+  }
 
-  *has_parent = 1;
+  out[o] = '\0';
   return 1;
 }
 
-static int resolve_parent_dir(char *path, fat_dir_ref_t *parent,
-                              char *leaf_name) {
-  char parent_name[13];
-  int has_parent = 0;
-
-  if (!parent || !leaf_name)
-    return FAT_ERR_INVALID;
-
-  if (!split_one_level_path(path, parent_name, leaf_name, &has_parent))
-    return FAT_ERR_INVALID;
-
-  if (!has_parent) {
-    parent->is_root = 1;
-    parent->cluster = 0;
-    return FAT_OK;
-  }
-
-  char parent83[11];
-  name_to_83(parent_name, parent83);
-
+static int dir_read_entry_in_ref(fat_dir_ref_t dir, char name83[11],
+                                 dir_entry_t *out, u32 *out_lba, int *out_idx) {
   u32 lba;
   int idx;
 
-  if (!dir_find(parent83, &lba, &idx))
-    return FAT_ERR_NOT_FOUND;
+  if (!out)
+    return 0;
+
+  if (!dir_find_in_ref(dir, name83, &lba, &idx))
+    return 0;
 
   u16 buff[256];
   ata_read(lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
 
-  if (!(e[idx].attr & 0x10))
+  *out = e[idx];
+
+  if (out_lba)
+    *out_lba = lba;
+
+  if (out_idx)
+    *out_idx = idx;
+
+  return 1;
+}
+
+static int resolve_parent_dir(char *path, fat_dir_ref_t *parent,
+                              char *leaf_name) {
+  fat_dir_ref_t dir;
+  char current[FAT_NAME_BUF];
+  char next[FAT_NAME_BUF];
+  int pos = 0;
+
+  if (!path || !path[0] || !parent || !leaf_name)
     return FAT_ERR_INVALID;
 
-  if (e[idx].first_cluster < 2)
+  dir.is_root = 1;
+  dir.cluster = 0;
+
+  int got = path_next_component(path, &pos, current);
+  if (got <= 0)
     return FAT_ERR_INVALID;
 
-  parent->is_root = 0;
-  parent->cluster = e[idx].first_cluster;
-  return FAT_OK;
+  if (!name_is_valid_83(current))
+    return FAT_ERR_INVALID;
+
+  while (1) {
+    got = path_next_component(path, &pos, next);
+
+    if (got < 0)
+      return FAT_ERR_INVALID;
+
+    if (got == 0) {
+      *parent = dir;
+      int i = 0;
+      for (; current[i]; i++)
+        leaf_name[i] = current[i];
+      leaf_name[i] = '\0';
+      return FAT_OK;
+    }
+
+    if (!name_is_valid_83(next))
+      return FAT_ERR_INVALID;
+
+    char current83[11];
+    dir_entry_t entry;
+    name_to_83(current, current83);
+
+    if (!dir_read_entry_in_ref(dir, current83, &entry, 0, 0))
+      return FAT_ERR_NOT_FOUND;
+
+    if (!(entry.attr & 0x10))
+      return FAT_ERR_INVALID;
+
+    if (entry.first_cluster < 2)
+      return FAT_ERR_INVALID;
+
+    dir.is_root = 0;
+    dir.cluster = entry.first_cluster;
+
+    int i = 0;
+    for (; next[i]; i++)
+      current[i] = next[i];
+    current[i] = '\0';
+  }
 }
 
 int fat_read_file_at(char *name, u32 offset, u8 *dst, u32 len, u32 *out_len) {
@@ -951,37 +947,50 @@ void fs_write(char *name, char *text) {
     println("write failed");
 }
 
-void fs_delete(char *name) {
+int fat_delete_file(char *path) {
+  fat_dir_ref_t parent;
+  char leaf[13];
   char n83[11];
 
-  if (!require_valid_name(name))
-    return;
+  int ret = resolve_parent_dir(path, &parent, leaf);
+  if (ret != FAT_OK)
+    return ret;
 
-  name_to_83(name, n83);
+  name_to_83(leaf, n83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx)) {
-    println("no such file");
-    return;
-  }
+  if (!dir_find_in_ref(parent, n83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
   u16 clus = e[idx].first_cluster;
 
-  if (e[idx].attr & 0x10) {
-    println("is a directory");
-    return;
-  }
+  if (e[idx].attr & 0x10)
+    return FAT_ERR_INVALID;
 
   free_chain(clus);
 
   e[idx].name[0] = 0xE5;
   ata_write(dir_lba, 1, buff);
-  println("deleted");
+
+  return FAT_OK;
+}
+
+void fs_delete(char *name) {
+  int ret = fat_delete_file(name);
+
+  if (ret == FAT_OK)
+    println("deleted");
+  else if (ret == FAT_ERR_INVALID)
+    println("is a directory");
+  else if (ret == FAT_ERR_NOT_FOUND)
+    println("no such file");
+  else
+    println("delete failed");
 }
 
 int fat_append_file(char *name, u8 *src, u32 append_len) {
@@ -1140,41 +1149,66 @@ void fs_append(char *name, char *text) {
     println("append failed");
 }
 
-void fs_rename(char *name, char *new_name) {
-  char n83[11];
-  char newn83[11];
+int fat_rename_file(char *old_path, char *new_path) {
+  fat_dir_ref_t old_parent;
+  fat_dir_ref_t new_parent;
+  char old_leaf[13];
+  char new_leaf[13];
+  char old83[11];
+  char new83[11];
 
-  if (!require_valid_name(name) || !require_valid_name(new_name))
-    return;
+  int ret = resolve_parent_dir(old_path, &old_parent, old_leaf);
+  if (ret != FAT_OK)
+    return ret;
 
-  name_to_83(name, n83);
-  name_to_83(new_name, newn83);
+  ret = resolve_parent_dir(new_path, &new_parent, new_leaf);
+  if (ret != FAT_OK)
+    return ret;
+
+  if (!same_dir_ref(old_parent, new_parent))
+    return FAT_ERR_INVALID;
+
+  name_to_83(old_leaf, old83);
+  name_to_83(new_leaf, new83);
 
   u32 dir_lba;
   int idx;
 
-  if (!dir_find(n83, &dir_lba, &idx)) {
-    println("no such file");
-    return;
-  }
+  if (!dir_find_in_ref(old_parent, old83, &dir_lba, &idx))
+    return FAT_ERR_NOT_FOUND;
 
   u32 new_dir_lba;
   int new_idx;
 
-  if (dir_find(newn83, &new_dir_lba, &new_idx)) {
-    println("new name file already exist");
-    return;
-  }
+  if (dir_find_in_ref(old_parent, new83, &new_dir_lba, &new_idx))
+    return FAT_ERR_EXISTS;
 
   u16 buff[256];
   ata_read(dir_lba, 1, buff);
   dir_entry_t *e = (dir_entry_t *)buff;
 
-  memory_copy(newn83, (char *)e[idx].name, 11);
+  if (e[idx].attr & 0x10)
+    return FAT_ERR_INVALID;
+
+  memory_copy(new83, (char *)e[idx].name, 11);
 
   ata_write(dir_lba, 1, buff);
+  return FAT_OK;
+}
 
-  println("renamed");
+void fs_rename(char *name, char *new_name) {
+  int ret = fat_rename_file(name, new_name);
+
+  if (ret == FAT_OK)
+    println("renamed");
+  else if (ret == FAT_ERR_INVALID)
+    println("invalid rename");
+  else if (ret == FAT_ERR_NOT_FOUND)
+    println("no such file");
+  else if (ret == FAT_ERR_EXISTS)
+    println("new name already exists");
+  else
+    println("rename failed");
 }
 
 static int dir_cluster_is_empty(u16 cluster) {
