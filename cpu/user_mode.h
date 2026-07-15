@@ -36,7 +36,6 @@ struct task;
 #define USER_WAITPID_NOT_FOUND 0xFFFFFFFF
 
 #define USER_MAX_IMAGE_FRAMES 2
-#define USER_MAX_ELF_FRAMES 16
 
 #define USER_MAX_FDS 8
 #define USER_CWD_MAX 64
@@ -52,8 +51,8 @@ struct task;
 #define USER_FD_TYPE_STDERR 3
 #define USER_FD_TYPE_VFS 4
 
-#define USER_MAX_ELF_FRAMES 16
 #define USER_MAX_ELF_REGIONS 8
+#define USER_MAX_ELF_FRAMES 16
 
 typedef struct {
   int type;
@@ -143,6 +142,7 @@ u32 user_fd_lseek_current(int fd, u32 offset, u32 whence);
 u32 user_stat_path(char *path, user_stat_t *out);
 
 int user_check_elf_file(char *name);
+int run_user_elf_file(char *name);
 
 #define MAX_USER_PROCESSES 8
 

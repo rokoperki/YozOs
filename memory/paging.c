@@ -176,6 +176,17 @@ void address_space_destroy(address_space_t *space) {
   if (!space || space == &kernel_space)
     return;
 
+  if (space->page_directory) {
+    for (u32 i = 1; i < PAGE_ENTRIES; i++) {
+      u32 pde = space->page_directory[i];
+
+      if (pde & PAGE_PRESENT) {
+        free_frame(pde & PAGE_ADDR_MASK);
+        space->page_directory[i] = 0;
+      }
+    }
+  }
+
   if (space->low_page_table) {
     free_frame((u32)space->low_page_table);
     space->low_page_table = 0;

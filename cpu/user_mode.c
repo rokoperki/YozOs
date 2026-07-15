@@ -1079,6 +1079,18 @@ u32 user_stat_path(char *path, user_stat_t *out) {
   return USER_OK;
 }
 
+static u32 user_region_flags_from_elf(u32 p_flags) {
+  u32 flags = USER_REGION_READ;
+
+  if (p_flags & PF_W)
+    flags |= USER_REGION_WRITE;
+
+  if (p_flags & PF_X)
+    flags |= USER_REGION_EXEC;
+
+  return flags;
+}
+
 static u32 elf_count_load_segments(u8 *image) {
   elf32_ehdr_t *h = elf32_header(image);
   u32 count = 0;
@@ -1282,6 +1294,7 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
   *entry = h->e_entry;
   *segments = 0;
   *pages = 0;
+  process->elf_region_count = 0;
 
   for (u16 i = 0; i < h->e_phnum; i++) {
     elf32_phdr_t *p = elf32_program_header(image, i);
@@ -1295,8 +1308,107 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
     if (!elf_map_segment(process, p, image, image_len, pages))
       return 0;
 
+    if (process->elf_region_count >= USER_MAX_ELF_REGIONS)
+      return 0;
+
+    user_region_set(&process->elf_regions[process->elf_region_count],
+                    p->p_vaddr, p->p_memsz,
+                    user_region_flags_from_elf(p->p_flags));
+
+    process->elf_region_count++;
+
     (*segments)++;
   }
 
+  if (process->elf_region_count >= USER_MAX_ELF_REGIONS)
+    return 0;
+
+  user_region_set(&process->elf_regions[process->elf_region_count],
+                  USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE,
+                  USER_REGION_READ | USER_REGION_WRITE);
+  process->elf_region_count++;
+
+  user_program_set(&process->elf_program, *entry, USER_STACK_TOP,
+                   process->elf_regions, process->elf_region_count);
+  process->program = &process->elf_program;
+
   return *segments > 0;
+}
+
+int run_user_elf_file(char *name) {
+  u32 loaded_len;
+
+  memory_set(elf_load_buf, 0, sizeof(elf_load_buf));
+
+  if (!fat_read_file(name, elf_load_buf, sizeof(elf_load_buf), &loaded_len)) {
+    println("could not read ELF");
+    return -1;
+  }
+
+  if (!elf32_header_ok(elf_load_buf, loaded_len)) {
+    println("invalid ELF header");
+    return -1;
+  }
+
+  if (!elf32_program_headers_ok(elf_load_buf, loaded_len)) {
+    println("invalid ELF program headers");
+    return -1;
+  }
+
+  user_process_t *process = user_process_alloc();
+  if (!process) {
+    println("no process slots");
+    return -1;
+  }
+
+  *process = (user_process_t){
+      .name = 0,
+      .pid = 0,
+      .parent_pid = 0,
+      .task = 0,
+      .address_space = address_space_create_user(),
+      .state = USER_PROCESS_READY,
+      .exit_code = 0,
+  };
+
+  user_process_init_fds(process);
+  user_process_init_cwd(process);
+  user_process_assign_pid(process);
+  user_process_set_name(process, name);
+
+  if (!process->address_space) {
+    println("no address space");
+    user_process_clear(process);
+    return -1;
+  }
+
+  if (!user_process_map_stack(process)) {
+    println("no user stack");
+    user_process_clear(process);
+    return -1;
+  }
+
+  u32 entry;
+  u32 segments;
+  u32 pages;
+
+  if (!user_map_elf_segments(process, elf_load_buf, loaded_len, &entry,
+                             &segments, &pages)) {
+    println("ELF map failed");
+    user_process_clear(process);
+    return -1;
+  }
+
+  task_t *task = spawn_task(process->name, user_file_task_entry);
+  if (!task) {
+    println("no task slot");
+    user_process_clear(process);
+    return -1;
+  }
+
+  process->task = task;
+  task_set_user_process(task, process);
+  task_set_address_space(task, process->address_space);
+
+  return 0;
 }

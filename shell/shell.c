@@ -85,12 +85,12 @@ static const command_t commands[] = {
     {"TASKS", cmd_tasks, "list tasks"},
     {"REAP", cmd_reap, "[pid] remove exited process/tasks"},
     {"PROCS", cmd_procs, "list user processes"},
-    {"RUN", cmd_run, "<file> run flat user binary"},
+    {"RUN", cmd_run, "<file> run YOZ1 or ELF binary"},
     {"KILL", cmd_kill, "<pid> kill process"},
     {"WAIT", cmd_wait, "<pid> show process exit status"},
     {"VFSTEST", cmd_vfstest, "test vfs"},
     {"ELFINFO", cmd_elfinfo, "<file> validate ELF header"},
-    {"RUNELF", cmd_runelf, "<file> validate ELF load"},
+    {"RUNELF", cmd_runelf, "<file> run ELF binary"},
     {0, 0, 0},
 };
 
@@ -611,13 +611,41 @@ static void cmd_wait(char *a) {
 }
 
 static void cmd_run(char *a) {
+  char path[VFS_MAX_PATH];
+  u8 magic[4];
+  u32 read_len;
+
   if (strcmp(a, " ") == 0 || strlen(a) == 0) {
     println("usage: RUN <file>");
     return;
   }
 
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  if (!fat_read_file_at(path, 0, magic, sizeof(magic), &read_len) ||
+      read_len != sizeof(magic)) {
+    println("could not read executable");
+    return;
+  }
+
   reap_tasks();
-  run_user_file(a);
+
+  if (magic[0] == 'Y' && magic[1] == 'O' && magic[2] == 'Z' &&
+      magic[3] == '1') {
+    run_user_file(path);
+    return;
+  }
+
+  if (magic[0] == ELF_MAGIC0 && magic[1] == ELF_MAGIC1 &&
+      magic[2] == ELF_MAGIC2 && magic[3] == ELF_MAGIC3) {
+    run_user_elf_file(path);
+    return;
+  }
+
+  println("unknown executable format");
 }
 
 void cmd_vfstest(char *a) {
@@ -724,5 +752,5 @@ static void cmd_runelf(char *a) {
     return;
   }
 
-  user_check_elf_file(path);
+  run_user_elf_file(path);
 }
