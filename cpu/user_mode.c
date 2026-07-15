@@ -1199,17 +1199,35 @@ static int elf_segment_range_ok(elf32_phdr_t *p) {
   if (p->p_type != PT_LOAD)
     return 1;
 
-  if (p->p_memsz == 0)
+  if (p->p_memsz == 0) {
+    println("ELF empty segment");
     return 0;
+  }
 
-  if (p->p_filesz > p->p_memsz)
+  if (p->p_filesz > p->p_memsz) {
+    println("ELF segment filesz > memsz");
     return 0;
+  }
 
-  if (p->p_vaddr + p->p_memsz < p->p_vaddr)
-    return 0;
+  u32 seg_end = p->p_vaddr + p->p_memsz;
 
-  if (page_up(p->p_vaddr + p->p_memsz) < p->p_vaddr)
+  if (seg_end < p->p_vaddr) {
+    println("ELF segment overflow");
     return 0;
+  }
+
+  if (page_up(seg_end) < p->p_vaddr) {
+    println("ELF segment page overflow");
+    return 0;
+  }
+
+  u32 stack_start = USER_STACK_TOP - FRAME_SIZE;
+  u32 stack_end = USER_STACK_TOP;
+
+  if (p->p_vaddr < stack_end && seg_end > stack_start) {
+    println("ELF segment overlaps stack");
+    return 0;
+  }
 
   return 1;
 }
@@ -1255,22 +1273,32 @@ static int elf_map_segment(user_process_t *process, elf32_phdr_t *p, u8 *image,
                            u32 image_len, u32 *mapped_pages) {
   u32 start = page_down(p->p_vaddr);
   u32 end = page_up(p->p_vaddr + p->p_memsz);
+  u32 page_flags = PAGE_USER;
+
+  if (p->p_flags & PF_W)
+    page_flags |= PAGE_RW;
 
   for (u32 va = start; va < end; va += ELF_PAGE_SIZE) {
-    if (process->elf_frame_count >= USER_MAX_ELF_FRAMES)
+    if (process->elf_frame_count >= USER_MAX_ELF_FRAMES) {
+      println("ELF too many pages");
       return 0;
+    }
 
     u32 frame = alloc_frame();
-    if (frame == 0)
+    if (frame == 0) {
+      println("ELF no frame");
       return 0;
+    }
 
     if (!elf_fill_page_frame(frame, va, p, image, image_len)) {
+      println("ELF bad segment data");
       free_frame(frame);
       return 0;
     }
 
     if (!address_space_map_page(process->address_space, va, frame,
-                                PAGE_RW | PAGE_USER)) {
+                                page_flags)) {
+      println("ELF page map failed");
       free_frame(frame);
       return 0;
     }
@@ -1281,6 +1309,25 @@ static int elf_map_segment(user_process_t *process, elf32_phdr_t *p, u8 *image,
       (*mapped_pages)++;
   }
   return 1;
+}
+
+static int elf_entry_in_executable_segment(u8 *image, u32 entry) {
+  elf32_ehdr_t *h = elf32_header(image);
+
+  for (u16 i = 0; i < h->e_phnum; i++) {
+    elf32_phdr_t *p = elf32_program_header(image, i);
+
+    if (p->p_type != PT_LOAD)
+      continue;
+
+    if ((p->p_flags & PF_X) == 0)
+      continue;
+
+    if (entry >= p->p_vaddr && entry < p->p_vaddr + p->p_memsz)
+      return 1;
+  }
+
+  return 0;
 }
 
 static int user_map_elf_segments(user_process_t *process, u8 *image,
@@ -1296,6 +1343,11 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
   *pages = 0;
   process->elf_region_count = 0;
 
+  if (!elf_entry_in_executable_segment(image, *entry)) {
+    println("ELF entry not executable");
+    return 0;
+  }
+
   for (u16 i = 0; i < h->e_phnum; i++) {
     elf32_phdr_t *p = elf32_program_header(image, i);
 
@@ -1308,8 +1360,10 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
     if (!elf_map_segment(process, p, image, image_len, pages))
       return 0;
 
-    if (process->elf_region_count >= USER_MAX_ELF_REGIONS)
+    if (process->elf_region_count >= USER_MAX_ELF_REGIONS) {
+      println("ELF too many regions");
       return 0;
+    }
 
     user_region_set(&process->elf_regions[process->elf_region_count],
                     p->p_vaddr, p->p_memsz,
@@ -1320,8 +1374,15 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
     (*segments)++;
   }
 
-  if (process->elf_region_count >= USER_MAX_ELF_REGIONS)
+  if (*segments == 0) {
+    println("ELF no load segments");
     return 0;
+  }
+
+  if (process->elf_region_count >= USER_MAX_ELF_REGIONS) {
+    println("ELF too many regions");
+    return 0;
+  }
 
   user_region_set(&process->elf_regions[process->elf_region_count],
                   USER_STACK_TOP - FRAME_SIZE, FRAME_SIZE,
@@ -1332,7 +1393,7 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
                    process->elf_regions, process->elf_region_count);
   process->program = &process->elf_program;
 
-  return *segments > 0;
+  return 1;
 }
 
 int run_user_elf_file(char *name) {

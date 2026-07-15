@@ -11,12 +11,12 @@ YozOs currently boots a custom BIOS loader into a 32-bit C kernel with IDT/PIC
 interrupts, PIT timer ticks, keyboard input, paging, preemptive tasks,
 per-process address spaces, and ring-3 user programs.
 
-The kernel can load headered `YOZ1` flat binaries from a FAT16 data disk and run
-them as scheduler-owned user processes. Userland has a small process/syscall
+The kernel can load headered `YOZ1` flat binaries and static ELF32 executables
+from a FAT16 data disk, then run them as scheduler-owned user processes. `RUN`
+auto-detects both formats by file magic. Userland has a small process/syscall
 surface (`getpid`, `getppid`, `waitpid`, `kill`, `yield`, `exit`) plus
-fd-oriented I/O: `open`, `read`, `write`, `close`, `stat`, and `lseek`.
-Syscall failures use a stable errno-style negative ABI shared through
-`cpu/user_abi.h`.
+fd-oriented I/O: `open`, `read`, `write`, `close`, `stat`, and `lseek`. Syscall
+failures use a stable errno-style negative ABI shared through `cpu/user_abi.h`.
 
 Storage is intentionally simple: ATA PIO + FAT16 support, wrapped by a small VFS
 layer. FAT is limited to 8.3 names, nested subdirectory paths, and files up to
@@ -24,15 +24,18 @@ layer. FAT is limited to 8.3 names, nested subdirectory paths, and files up to
 
 Current external user tests cover basic output/input, process syscalls, user
 faults, fd stdin/stdout, file read/write/append, stat, seek, overwrite, path
-resolution, directory-aware stat types, and subdirectory file I/O:
+resolution, directory-aware stat types, subdirectory file I/O, and static ELF
+execution:
 `HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
 `KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
-`APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, `DIRSTAT.BIN`, and
-`DIRTEST.BIN`, and `NESTDIR.BIN`.
+`APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, `DIRSTAT.BIN`,
+`DIRTEST.BIN`, `NESTDIR.BIN`, `HELLO.ELF`, and `BSS.ELF`.
 
 Current limits:
 
-- Executables are custom flat `YOZ1` binaries, not ELF yet.
+- Static ELF support is early: program headers, loadable segments, BSS zeroing,
+  entry validation, and basic permissions work, but there is no `argc`/`argv`
+  stack ABI, C runtime, libc, dynamic linking, or `exec` yet.
 - The filesystem has no long names, directory fd API, or large-file support.
 - FAT writes are still capped at small fixed-size files.
 
@@ -48,8 +51,9 @@ Current limits:
 | `memory/`  | E820 reader (`memory_map.c`), bitmap frame allocator (`frame_alloc.c`), paging (`paging.c` + `paging_asm.asm`)     |
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
 | `fs/`      | FAT16 + VFS: root-dir list/read/create/write/append/delete/rename, stat, seek, fd-backed reads/writes; 8.3 names, 8 KiB files |
+| `elf/`     | ELF32 header/program-header validation helpers for static user executables                                         |
 | `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
-| `user/`    | External `YOZ1` flat user test sources for output, input, process, fault, and fd/VFS syscall tests                |
+| `user/`    | External `YOZ1` and ELF user test sources for output, input, process, fault, fd/VFS syscall, and ELF loader tests |
 | `tools/`   | Host-side helper scripts, including a small FAT16 image installer for test binaries                                |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
@@ -66,7 +70,7 @@ register constraints that fail under host Clang.
 
 ```bash
 make            # build bootable image (os-image.bin)
-make user-programs  # build external flat user binaries
+make user-programs  # build external YOZ1 and ELF user binaries
 make install-user-programs  # copy user binaries into disk.img
 make prepare-user-disk  # build image + install all user binaries
 make run        # build + boot in QEMU
@@ -108,6 +112,8 @@ RUN TEST/DIRTEST.BIN
 MKDIR A
 MKDIR A/B
 RUN TEST/NESTDIR.BIN
+RUN TEST/HELLO.ELF
+RUN TEST/BSS.ELF
 ```
 
 ## Booting on real hardware
