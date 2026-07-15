@@ -1,6 +1,7 @@
 #include "user_mode.h"
 #include "../drivers/keyboard.h"
 #include "../drivers/screen.h"
+#include "../elf/elf.h"
 #include "../fs/fat.h"
 #include "../fs/vfs.h"
 #include "../kernel/mem.h"
@@ -19,6 +20,17 @@ static void prepare_user_program(address_space_t *space,
     address_space_mark_user_range(space, program->regions[i].start,
                                   program->regions[i].len);
   }
+}
+
+#define USER_LOAD_MAX_BYTES 8192
+static u8 elf_load_buf[USER_LOAD_MAX_BYTES];
+
+#define ELF_PAGE_SIZE 4096
+
+static u32 page_down(u32 x) { return x & ~(ELF_PAGE_SIZE - 1); }
+
+static u32 page_up(u32 x) {
+  return (x + ELF_PAGE_SIZE - 1) & ~(ELF_PAGE_SIZE - 1);
 }
 
 #define USER_KERNEL_STACK_SIZE 4096
@@ -52,6 +64,9 @@ static void init_user_fault_process(user_process_t *process);
 static void user_process_close_fds(user_process_t *process);
 static u32 user_error_from_vfs(int ret);
 static void user_file_task_entry(void);
+static int user_map_elf_segments(user_process_t *process, u8 *image,
+                                 u32 image_len, u32 *entry, u32 *segments,
+                                 u32 *pages);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags) {
   if (!current_user_process || !current_user_process->program ||
@@ -330,9 +345,18 @@ static void user_process_clear(user_process_t *process) {
   for (u32 i = 0; i < process->image_frame_count; i++) {
     if (process->image_frames[i]) {
       free_frame(process->image_frames[i]);
+      process->image_frames[i] = 0;
     }
-    process->image_frame_count = 0;
   }
+  process->image_frame_count = 0;
+
+  for (u32 i = 0; i < process->elf_frame_count; i++) {
+    if (process->elf_frames[i]) {
+      free_frame(process->elf_frames[i]);
+      process->elf_frames[i] = 0;
+    }
+  }
+  process->elf_frame_count = 0;
 
   user_process_close_fds(process);
 
@@ -1053,4 +1077,226 @@ u32 user_stat_path(char *path, user_stat_t *out) {
     out->type = USER_STAT_TYPE_FILE;
 
   return USER_OK;
+}
+
+static u32 elf_count_load_segments(u8 *image) {
+  elf32_ehdr_t *h = elf32_header(image);
+  u32 count = 0;
+
+  for (u16 i = 0; i < h->e_phnum; i++) {
+    elf32_phdr_t *p = elf32_program_header(image, i);
+
+    if (p->p_type == PT_LOAD)
+      count++;
+  }
+
+  return count;
+}
+
+int user_check_elf_file(char *name) {
+  u32 len;
+
+  memory_set(elf_load_buf, 0, sizeof(elf_load_buf));
+
+  if (!fat_read_file(name, elf_load_buf, sizeof(elf_load_buf), &len)) {
+    println("could not read ELF");
+    return -1;
+  }
+
+  if (!elf32_header_ok(elf_load_buf, len)) {
+    println("invalid ELF header");
+    return -1;
+  }
+
+  if (!elf32_program_headers_ok(elf_load_buf, len)) {
+    println("invalid ELF program headers");
+    return -1;
+  }
+
+  elf32_ehdr_t *h = elf32_header(elf_load_buf);
+  u32 load_segments = elf_count_load_segments(elf_load_buf);
+
+  print("ELF load ok");
+  println("");
+
+  print("entry=");
+  char buf[16];
+  int_to_ascii(h->e_entry, buf);
+  println(buf);
+
+  print("segments=");
+  int_to_ascii(load_segments, buf);
+  println(buf);
+
+  user_process_t *process = user_process_alloc();
+  if (!process) {
+    println("no process slots");
+    return -1;
+  }
+
+  *process = (user_process_t){
+      .name = "ELFTEST",
+      .pid = 0,
+      .parent_pid = 0,
+      .task = 0,
+      .address_space = address_space_create_user(),
+      .state = USER_PROCESS_READY,
+      .exit_code = 0,
+  };
+
+  user_process_init_fds(process);
+  user_process_init_cwd(process);
+  user_process_assign_pid(process);
+
+  if (!process->address_space) {
+    println("no address space");
+    user_process_clear(process);
+    return -1;
+  }
+
+  u32 entry;
+  u32 mapped_segments;
+  u32 mapped_pages;
+
+  if (!user_map_elf_segments(process, elf_load_buf, len, &entry,
+                             &mapped_segments, &mapped_pages)) {
+    println("ELF map failed");
+    user_process_clear(process);
+    return -1;
+  }
+
+  println("ELF mapped ok");
+
+  print("entry=");
+  int_to_ascii(entry, buf);
+  println(buf);
+
+  print("segments=");
+  int_to_ascii(mapped_segments, buf);
+  println(buf);
+
+  print("pages=");
+  int_to_ascii(mapped_pages, buf);
+  println(buf);
+
+  user_process_clear(process);
+  return 0;
+}
+
+static int elf_segment_range_ok(elf32_phdr_t *p) {
+  if (p->p_type != PT_LOAD)
+    return 1;
+
+  if (p->p_memsz == 0)
+    return 0;
+
+  if (p->p_filesz > p->p_memsz)
+    return 0;
+
+  if (p->p_vaddr + p->p_memsz < p->p_vaddr)
+    return 0;
+
+  if (page_up(p->p_vaddr + p->p_memsz) < p->p_vaddr)
+    return 0;
+
+  return 1;
+}
+
+static int elf_fill_page_frame(u32 frame, u32 page_vaddr, elf32_phdr_t *p,
+                               u8 *image, u32 image_len) {
+  memory_set((u8 *)frame, 0, ELF_PAGE_SIZE);
+
+  u32 file_start = p->p_vaddr;
+  u32 file_end = p->p_vaddr + p->p_filesz;
+
+  u32 page_start = page_vaddr;
+  u32 page_end = page_vaddr + ELF_PAGE_SIZE;
+
+  if (file_end < file_start)
+    return 0;
+
+  if (page_end < page_start)
+    return 0;
+
+  u32 copy_start = page_start > file_start ? page_start : file_start;
+  u32 copy_end = page_end < file_end ? page_end : file_end;
+
+  if (copy_start >= copy_end)
+    return 1;
+
+  u32 copy_len = copy_end - copy_start;
+  u32 file_off = p->p_offset + (copy_start - p->p_vaddr);
+  u32 frame_off = copy_start - page_start;
+
+  if (file_off + copy_len < file_off)
+    return 0;
+
+  if (file_off + copy_len > image_len)
+    return 0;
+
+  memory_copy((char *)image + file_off, (char *)frame + frame_off, copy_len);
+
+  return 1;
+}
+
+static int elf_map_segment(user_process_t *process, elf32_phdr_t *p, u8 *image,
+                           u32 image_len, u32 *mapped_pages) {
+  u32 start = page_down(p->p_vaddr);
+  u32 end = page_up(p->p_vaddr + p->p_memsz);
+
+  for (u32 va = start; va < end; va += ELF_PAGE_SIZE) {
+    if (process->elf_frame_count >= USER_MAX_ELF_FRAMES)
+      return 0;
+
+    u32 frame = alloc_frame();
+    if (frame == 0)
+      return 0;
+
+    if (!elf_fill_page_frame(frame, va, p, image, image_len)) {
+      free_frame(frame);
+      return 0;
+    }
+
+    if (!address_space_map_page(process->address_space, va, frame,
+                                PAGE_RW | PAGE_USER)) {
+      free_frame(frame);
+      return 0;
+    }
+
+    process->elf_frames[process->elf_frame_count++] = frame;
+
+    if (mapped_pages)
+      (*mapped_pages)++;
+  }
+  return 1;
+}
+
+static int user_map_elf_segments(user_process_t *process, u8 *image,
+                                 u32 image_len, u32 *entry, u32 *segments,
+                                 u32 *pages) {
+
+  if (!elf32_program_headers_ok(image, image_len))
+    return 0;
+
+  elf32_ehdr_t *h = elf32_header(image);
+  *entry = h->e_entry;
+  *segments = 0;
+  *pages = 0;
+
+  for (u16 i = 0; i < h->e_phnum; i++) {
+    elf32_phdr_t *p = elf32_program_header(image, i);
+
+    if (p->p_type != PT_LOAD)
+      continue;
+
+    if (!elf_segment_range_ok(p))
+      return 0;
+
+    if (!elf_map_segment(process, p, image, image_len, pages))
+      return 0;
+
+    (*segments)++;
+  }
+
+  return *segments > 0;
 }

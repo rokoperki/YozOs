@@ -204,8 +204,18 @@ int address_space_map_page(address_space_t *space, u32 virt, u32 phys,
   u32 pt_index = (virt >> 12) & 0x3FF;
 
   u32 pde = space->page_directory[pd_index];
-  if ((pde & PAGE_PRESENT) == 0)
-    return 0;
+  if ((pde & PAGE_PRESENT) == 0) {
+    u32 table = alloc_frame();
+    if (table == 0)
+      return 0;
+
+    memory_set((u8 *)table, 0, FRAME_SIZE);
+
+    space->page_directory[pd_index] =
+        table | PAGE_PRESENT | PAGE_RW | PAGE_USER;
+
+    pde = space->page_directory[pd_index];
+  }
 
   u32 *pt = (u32 *)(pde & PAGE_ADDR_MASK);
   pt[pt_index] = (phys & PAGE_ADDR_MASK) | flags | PAGE_PRESENT;

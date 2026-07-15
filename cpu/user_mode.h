@@ -36,6 +36,7 @@ struct task;
 #define USER_WAITPID_NOT_FOUND 0xFFFFFFFF
 
 #define USER_MAX_IMAGE_FRAMES 2
+#define USER_MAX_ELF_FRAMES 16
 
 #define USER_MAX_FDS 8
 #define USER_CWD_MAX 64
@@ -50,6 +51,9 @@ struct task;
 #define USER_FD_TYPE_STDOUT 2
 #define USER_FD_TYPE_STDERR 3
 #define USER_FD_TYPE_VFS 4
+
+#define USER_MAX_ELF_FRAMES 16
+#define USER_MAX_ELF_REGIONS 8
 
 typedef struct {
   int type;
@@ -90,6 +94,11 @@ typedef struct user_process {
   u32 exit_code;
   u32 image_frames[USER_MAX_IMAGE_FRAMES];
   u32 image_frame_count;
+  u32 elf_frames[USER_MAX_ELF_FRAMES];
+  u32 elf_frame_count;
+  user_region_t elf_regions[USER_MAX_ELF_REGIONS];
+  user_program_t elf_program;
+  u32 elf_region_count;
   user_region_t loaded_regions[2];
   user_program_t loaded_program;
   user_fd_t fds[USER_MAX_FDS];
@@ -132,6 +141,8 @@ u32 user_fd_write_current(int fd, u8 *src, u32 len);
 u32 user_fd_lseek_current(int fd, u32 offset, u32 whence);
 
 u32 user_stat_path(char *path, user_stat_t *out);
+
+int user_check_elf_file(char *name);
 
 #define MAX_USER_PROCESSES 8
 

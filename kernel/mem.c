@@ -12,3 +12,8 @@ void memory_set(u8 *dest, u8 val, u32 len) {
   for (; len != 0; len--)
     *temp++ = val;
 }
+
+void *memset(void *dest, int val, u32 len) {
+  memory_set((u8 *)dest, (u8)val, len);
+  return dest;
+}

@@ -55,6 +55,7 @@ static void cmd_wait(char *a);
 static void cmd_vfstest(char *a);
 static void cmd_rmdir(char *a);
 static void cmd_elfinfo(char *a);
+static void cmd_runelf(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -89,6 +90,7 @@ static const command_t commands[] = {
     {"WAIT", cmd_wait, "<pid> show process exit status"},
     {"VFSTEST", cmd_vfstest, "test vfs"},
     {"ELFINFO", cmd_elfinfo, "<file> validate ELF header"},
+    {"RUNELF", cmd_runelf, "<file> validate ELF load"},
     {0, 0, 0},
 };
 
@@ -707,4 +709,20 @@ static void cmd_elfinfo(char *a) {
 
     println("");
   }
+}
+
+static void cmd_runelf(char *a) {
+  char path[VFS_MAX_PATH];
+
+  if (!a || !a[0]) {
+    println("usage: RUNELF <file>");
+    return;
+  }
+
+  if (!shell_resolve_path(a, path)) {
+    println("invalid path");
+    return;
+  }
+
+  user_check_elf_file(path);
 }
