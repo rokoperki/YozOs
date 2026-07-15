@@ -18,21 +18,22 @@ fd-oriented I/O: `open`, `read`, `write`, `close`, `stat`, and `lseek`.
 Syscall failures use a stable errno-style negative ABI shared through
 `cpu/user_abi.h`.
 
-Storage is intentionally simple: ATA PIO + FAT16 root-directory support, wrapped
-by a small VFS layer. FAT is limited to 8.3 names, root-directory paths, and
-files up to 8 KiB, but supports shell and userland read/write/append/seek tests.
+Storage is intentionally simple: ATA PIO + FAT16 support, wrapped by a small VFS
+layer. FAT is limited to 8.3 names, nested subdirectory paths, and files up to
+8 KiB, but supports shell and userland read/write/append/seek tests.
 
 Current external user tests cover basic output/input, process syscalls, user
 faults, fd stdin/stdout, file read/write/append, stat, seek, overwrite, path
-resolution, and directory-aware stat types:
+resolution, directory-aware stat types, and subdirectory file I/O:
 `HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
 `KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
-`APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, and `DIRSTAT.BIN`.
+`APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, `DIRSTAT.BIN`, and
+`DIRTEST.BIN`, and `NESTDIR.BIN`.
 
 Current limits:
 
 - Executables are custom flat `YOZ1` binaries, not ELF yet.
-- The filesystem has no directories, current working directory, or long names.
+- The filesystem has no long names, directory fd API, or large-file support.
 - FAT writes are still capped at small fixed-size files.
 
 ## Layout
@@ -48,7 +49,7 @@ Current limits:
 | `task/`    | Preemptive multitasking: `task.c` (`task_t`, scheduler) + `switch_context.asm`                                     |
 | `fs/`      | FAT16 + VFS: root-dir list/read/create/write/append/delete/rename, stat, seek, fd-backed reads/writes; 8.3 names, 8 KiB files |
 | `shell/`   | Table-driven shell dispatcher and command handlers                                                                 |
-| `user/`    | External `YOZ1` flat user binaries for output, input, process, fault, and fd/VFS syscall tests                    |
+| `user/`    | External `YOZ1` flat user test sources for output, input, process, fault, and fd/VFS syscall tests                |
 | `tools/`   | Host-side helper scripts, including a small FAT16 image installer for test binaries                                |
 | `basic.c`  | Standalone C scratch for studying disassembly (not booted)                                                         |
 
@@ -86,21 +87,27 @@ make prepare-user-disk
 make run-disk
 ```
 
-Then run this in the YozOs shell:
+`make prepare-user-disk` recreates `disk.img` and installs the external test
+binaries under the FAT `TEST/` directory. Then run this in the YozOs shell:
 
 ```text
-RUN HELLO.BIN
-RUN ECHO.BIN
-RUN FAULT.BIN
-RUN READFILE.BIN
-RUN ECHOFD.BIN
-RUN STAT.BIN
-RUN WRITEF.BIN
-RUN APPEND.BIN
-RUN SEEK.BIN
-RUN OVERWR.BIN
-RUN PATH.BIN
-RUN DIRSTAT.BIN
+RUN TEST/HELLO.BIN
+RUN TEST/ECHO.BIN
+RUN TEST/FAULT.BIN
+RUN TEST/READFILE.BIN
+RUN TEST/ECHOFD.BIN
+RUN TEST/STAT.BIN
+RUN TEST/WRITEF.BIN
+RUN TEST/APPEND.BIN
+RUN TEST/SEEK.BIN
+RUN TEST/OVERWR.BIN
+RUN TEST/PATH.BIN
+RUN TEST/DIRSTAT.BIN
+MKDIR TESTDIR
+RUN TEST/DIRTEST.BIN
+MKDIR A
+MKDIR A/B
+RUN TEST/NESTDIR.BIN
 ```
 
 ## Booting on real hardware

@@ -99,9 +99,13 @@ $(OS_IMAGE): $(BOOT_BIN) kernel.bin
 DISK_IMG := disk.img
 
 $(DISK_IMG):
-	dd if=/dev/zero of=$@ bs=512 count=2048 2>/dev/null
+	$(PYTHON) tools/fat16_mkfs.py $@ 2048
+
+reset-user-disk:
+	$(PYTHON) tools/fat16_mkfs.py $(DISK_IMG) 2048
 
 # --- User programs ----------------------------------------------------------
+USER_DISK_DIR := TEST
 USER_HELLO_BIN := user/HELLO.BIN
 USER_ECHO_BIN  := user/ECHO.BIN
 USER_FAULT_BIN := user/FAULT.BIN
@@ -118,7 +122,9 @@ USER_SEEK_BIN := user/SEEK.BIN
 USER_OVERWRITE_BIN := user/OVERWR.BIN
 USER_PATH_BIN := user/PATH.BIN
 USER_DIRSTAT_BIN := user/DIRSTAT.BIN
-USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN) $(USER_READFILE_BIN) $(USER_ECHOFD_BIN) $(USER_STAT_BIN) $(USER_WRITEFILE_BIN) $(USER_APPEND_BIN) $(USER_SEEK_BIN) $(USER_OVERWRITE_BIN) $(USER_PATH_BIN) $(USER_DIRSTAT_BIN)
+USER_DIRTEST_BIN := user/DIRTEST.BIN
+USER_NESTDIR_BIN := user/NESTDIR.BIN
+USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN) $(USER_READFILE_BIN) $(USER_ECHOFD_BIN) $(USER_STAT_BIN) $(USER_WRITEFILE_BIN) $(USER_APPEND_BIN) $(USER_SEEK_BIN) $(USER_OVERWRITE_BIN) $(USER_PATH_BIN) $(USER_DIRSTAT_BIN) $(USER_DIRTEST_BIN) $(USER_NESTDIR_BIN)
 
 $(USER_HELLO_BIN): user/hello.asm
 	$(ASM) $< -f bin -o $@
@@ -168,30 +174,39 @@ $(USER_PATH_BIN): user/path.asm
 $(USER_DIRSTAT_BIN): user/dirstat.asm
 	$(ASM) $< -f bin -o $@
 
+$(USER_DIRTEST_BIN): user/dirtest.asm
+	$(ASM) $< -f bin -o $@
+
+$(USER_NESTDIR_BIN): user/nestdir.asm
+	$(ASM) $< -f bin -o $@
+
 user-programs: $(USER_BINS)
 
 install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) HELLO.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) $(USER_DISK_DIR)/HELLO.BIN
 
 install-user-programs: $(DISK_IMG) $(USER_BINS)
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) HELLO.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHO_BIN) ECHO.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_FAULT_BIN) FAULT.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PID_BIN) PID.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WAITSELF_BIN) WAITSELF.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PPID_BIN) PPID.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_KILLSELF_BIN) KILLSELF.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_READFILE_BIN) READFILE.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHOFD_BIN) ECHOFD.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_STAT_BIN) STAT.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WRITEFILE_BIN) WRITEF.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_APPEND_BIN) APPEND.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_SEEK_BIN) SEEK.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_OVERWRITE_BIN) OVERWR.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PATH_BIN) PATH.BIN
-	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_DIRSTAT_BIN) DIRSTAT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) $(USER_DISK_DIR)/HELLO.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHO_BIN) $(USER_DISK_DIR)/ECHO.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_FAULT_BIN) $(USER_DISK_DIR)/FAULT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PID_BIN) $(USER_DISK_DIR)/PID.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WAITSELF_BIN) $(USER_DISK_DIR)/WAITSELF.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PPID_BIN) $(USER_DISK_DIR)/PPID.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_KILLSELF_BIN) $(USER_DISK_DIR)/KILLSELF.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_READFILE_BIN) $(USER_DISK_DIR)/READFILE.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHOFD_BIN) $(USER_DISK_DIR)/ECHOFD.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_STAT_BIN) $(USER_DISK_DIR)/STAT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_WRITEFILE_BIN) $(USER_DISK_DIR)/WRITEF.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_APPEND_BIN) $(USER_DISK_DIR)/APPEND.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_SEEK_BIN) $(USER_DISK_DIR)/SEEK.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_OVERWRITE_BIN) $(USER_DISK_DIR)/OVERWR.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_PATH_BIN) $(USER_DISK_DIR)/PATH.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_DIRSTAT_BIN) $(USER_DISK_DIR)/DIRSTAT.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_DIRTEST_BIN) $(USER_DISK_DIR)/DIRTEST.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_NESTDIR_BIN) $(USER_DISK_DIR)/NESTDIR.BIN
 
-prepare-user-disk: $(OS_IMAGE) install-user-programs
+prepare-user-disk: $(OS_IMAGE) reset-user-disk
+	$(MAKE) install-user-programs
 
 # --- Run --------------------------------------------------------------------
 run: $(OS_IMAGE)
@@ -228,7 +243,7 @@ usb: $(OS_IMAGE)
 # --- Phony ------------------------------------------------------------------
 -include $(DEPS)
 
-.PHONY: all boot basic kernel image run run-disk run-boot usb user-programs install-hello install-user-programs prepare-user-disk disasm-boot disasm-basic disasm-kernel clean
+.PHONY: all boot basic kernel image run run-disk run-boot usb user-programs install-hello install-user-programs prepare-user-disk reset-user-disk disasm-boot disasm-basic disasm-kernel clean
 all: $(OS_IMAGE)
 	@printf ">>> %s built: %s bytes (%s KiB)\n" "$(OS_IMAGE)" \
 	  "$$(stat -f%z $(OS_IMAGE))" "$$(( $$(stat -f%z $(OS_IMAGE)) / 1024 ))"
