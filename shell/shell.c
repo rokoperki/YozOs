@@ -4,6 +4,7 @@
 #include "../cpu/user_mode.h"
 #include "../drivers/ata.h"
 #include "../drivers/screen.h"
+#include "../elf/elf.h"
 #include "../fs/fat.h"
 #include "../fs/vfs.h"
 #include "../kernel/function.h"
@@ -53,6 +54,7 @@ static void cmd_kill(char *a);
 static void cmd_wait(char *a);
 static void cmd_vfstest(char *a);
 static void cmd_rmdir(char *a);
+static void cmd_elfinfo(char *a);
 
 static const command_t commands[] = {
     {"HELP", cmd_help, "list commands"},
@@ -86,6 +88,7 @@ static const command_t commands[] = {
     {"KILL", cmd_kill, "<pid> kill process"},
     {"WAIT", cmd_wait, "<pid> show process exit status"},
     {"VFSTEST", cmd_vfstest, "test vfs"},
+    {"ELFINFO", cmd_elfinfo, "<file> validate ELF header"},
     {0, 0, 0},
 };
 
@@ -142,6 +145,12 @@ static int shell_resolve_path(char *input, char *out) {
 
   out[o] = '\0';
   return 1;
+}
+
+static void print_u32_dec(u32 value) {
+  char buf[16];
+  int_to_ascii(value, buf);
+  print(buf);
 }
 
 void shell_print_prompt(void) {
@@ -637,4 +646,65 @@ void cmd_vfstest(char *a) {
 
   println("");
   vfs_close(h);
+}
+
+static void cmd_elfinfo(char *a) {
+  static u8 elf_buf[8192];
+  u32 len;
+
+  if (!a || !a[0]) {
+    println("usage: ELFINFO <file>");
+    return;
+  }
+
+  if (!fat_read_file(a, elf_buf, sizeof(elf_buf), &len)) {
+    println("could not read file");
+    return;
+  }
+
+  if (!elf32_header_ok(elf_buf, len)) {
+    println("invalid ELF header");
+    return;
+  }
+
+  if (!elf32_program_headers_ok(elf_buf, len)) {
+    println("invalid ELF program headers");
+    return;
+  }
+
+  elf32_ehdr_t *h = elf32_header(elf_buf);
+
+  println("valid ELF");
+
+  print("entry=");
+  print_u32_dec(h->e_entry);
+  println("");
+
+  print("phnum=");
+  print_u32_dec(h->e_phnum);
+  println("");
+
+  for (u16 i = 0; i < h->e_phnum; i++) {
+    elf32_phdr_t *p = elf32_program_header(elf_buf, i);
+
+    if (p->p_type != PT_LOAD)
+      continue;
+
+    print("LOAD vaddr=");
+    print_u32_dec(p->p_vaddr);
+
+    print(" off=");
+    print_u32_dec(p->p_offset);
+
+    print(" filesz=");
+    print_u32_dec(p->p_filesz);
+
+    print(" memsz=");
+    print_u32_dec(p->p_memsz);
+
+    print(" flags=");
+    print_u32_dec(p->p_flags);
+
+    println("");
+  }
 }

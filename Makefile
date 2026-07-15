@@ -50,7 +50,7 @@ disasm-boot: $(BOOT_BIN)
 # --- Kernel -----------------------------------------------------------------
 # Linked to run at 0x10000, the address the boot sector loads it to and jumps.
 # basic.c is standalone scratch and is deliberately NOT in this list.
-C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c) $(wildcard fs/*.c) $(wildcard shell/*.c)
+C_SOURCES := kernel.c $(wildcard drivers/*.c) $(wildcard cpu/*.c) $(wildcard kernel/*.c) $(wildcard memory/*.c) $(wildcard task/*.c) $(wildcard fs/*.c) $(wildcard shell/*.c) $(wildcard elf/*.c)
 OBJ       := $(C_SOURCES:.c=.o)
 DEPS      := $(OBJ:.o=.d)
 
@@ -124,7 +124,10 @@ USER_PATH_BIN := user/PATH.BIN
 USER_DIRSTAT_BIN := user/DIRSTAT.BIN
 USER_DIRTEST_BIN := user/DIRTEST.BIN
 USER_NESTDIR_BIN := user/NESTDIR.BIN
+USER_ELFHELLO_OBJ := user/elfhello.o
+USER_ELFHELLO_ELF := user/HELLO.ELF
 USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN) $(USER_READFILE_BIN) $(USER_ECHOFD_BIN) $(USER_STAT_BIN) $(USER_WRITEFILE_BIN) $(USER_APPEND_BIN) $(USER_SEEK_BIN) $(USER_OVERWRITE_BIN) $(USER_PATH_BIN) $(USER_DIRSTAT_BIN) $(USER_DIRTEST_BIN) $(USER_NESTDIR_BIN)
+USER_ELFS      := $(USER_ELFHELLO_ELF)
 
 $(USER_HELLO_BIN): user/hello.asm
 	$(ASM) $< -f bin -o $@
@@ -180,12 +183,18 @@ $(USER_DIRTEST_BIN): user/dirtest.asm
 $(USER_NESTDIR_BIN): user/nestdir.asm
 	$(ASM) $< -f bin -o $@
 
-user-programs: $(USER_BINS)
+$(USER_ELFHELLO_OBJ): user/elfhello.asm
+	$(ASM) $< -f elf -o $@
+
+$(USER_ELFHELLO_ELF): $(USER_ELFHELLO_OBJ)
+	$(LD) -Ttext 0x8048000 -o $@ $<
+
+user-programs: $(USER_BINS) $(USER_ELFS)
 
 install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) $(USER_DISK_DIR)/HELLO.BIN
 
-install-user-programs: $(DISK_IMG) $(USER_BINS)
+install-user-programs: $(DISK_IMG) $(USER_BINS) $(USER_ELFS)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_HELLO_BIN) $(USER_DISK_DIR)/HELLO.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ECHO_BIN) $(USER_DISK_DIR)/ECHO.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_FAULT_BIN) $(USER_DISK_DIR)/FAULT.BIN
@@ -204,6 +213,7 @@ install-user-programs: $(DISK_IMG) $(USER_BINS)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_DIRSTAT_BIN) $(USER_DISK_DIR)/DIRSTAT.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_DIRTEST_BIN) $(USER_DISK_DIR)/DIRTEST.BIN
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_NESTDIR_BIN) $(USER_DISK_DIR)/NESTDIR.BIN
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ELFHELLO_ELF) $(USER_DISK_DIR)/HELLO.ELF
 
 prepare-user-disk: $(OS_IMAGE) reset-user-disk
 	$(MAKE) install-user-programs
@@ -255,4 +265,4 @@ image: $(OS_IMAGE)
 clean:
 	rm -f boot/boot_sect.bin basic.o basic.elf basic.bin basic.dis \
 	      $(KERNEL_SECTORS_INC) kernel_entry.o kernel.bin $(OBJ) $(DEPS) $(ASM_OBJ) \
-	      $(OS_IMAGE) $(USER_BINS)
+	      $(OS_IMAGE) $(USER_BINS) $(USER_ELFHELLO_OBJ) $(USER_ELFS)
