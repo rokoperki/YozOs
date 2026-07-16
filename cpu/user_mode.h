@@ -54,6 +54,9 @@ struct task;
 #define USER_MAX_ELF_REGIONS 8
 #define USER_MAX_ELF_FRAMES 16
 
+#define USER_MAX_ARGS 8
+#define USER_ARG_MAX 64
+
 typedef struct {
   int type;
   int vfs_handle;
@@ -102,6 +105,9 @@ typedef struct user_process {
   user_program_t loaded_program;
   user_fd_t fds[USER_MAX_FDS];
   char cwd[USER_CWD_MAX];
+  u32 argc;
+  char argv[USER_MAX_ARGS][USER_ARG_MAX];
+  u32 stack_entry;
 } user_process_t;
 
 int run_user_process(user_process_t *process);
@@ -131,7 +137,7 @@ int user_process_wait_pid(u32 pid);
 u32 user_waitpid_status(u32 pid);
 
 int user_memory_ok(u32 ptr, u32 len, u32 required_flags);
-int run_user_file(char *name);
+int run_user_file(char *name, char *args);
 
 u32 user_fd_open_current(char *path, u32 flags);
 u32 user_fd_read_current(int fd, u8 *dst, u32 len);
@@ -142,7 +148,7 @@ u32 user_fd_lseek_current(int fd, u32 offset, u32 whence);
 u32 user_stat_path(char *path, user_stat_t *out);
 
 int user_check_elf_file(char *name);
-int run_user_elf_file(char *name);
+int run_user_elf_file(char *name, char *args);
 
 #define MAX_USER_PROCESSES 8
 

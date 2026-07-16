@@ -372,6 +372,106 @@ static void user_process_clear(user_process_t *process) {
   }
 }
 
+static void user_process_copy_arg(char *dst, char *src) {
+  int i = 0;
+
+  while (src && src[i] && i + 1 < USER_ARG_MAX) {
+    dst[i] = src[i];
+    i++;
+  }
+
+  dst[i] = '\0';
+}
+
+static void user_process_set_args(user_process_t *process, char *program,
+                                  char *args) {
+  process->argc = 0;
+  process->stack_entry = USER_STACK_TOP;
+
+  user_process_copy_arg(process->argv[process->argc], program);
+  process->argc++;
+
+  while (args && *args && process->argc < USER_MAX_ARGS) {
+    while (*args == ' ')
+      args++;
+
+    if (!*args)
+      break;
+
+    char *start = args;
+
+    while (*args && *args != ' ')
+      args++;
+
+    char saved = *args;
+    *args = '\0';
+
+    user_process_copy_arg(process->argv[process->argc], start);
+    process->argc++;
+
+    if (saved == '\0')
+      break;
+
+    *args = saved;
+  }
+}
+
+static int user_process_build_initial_stack(user_process_t *process) {
+  if (!process || !process->user_stack_frame)
+    return 0;
+
+  u32 argc = process->argc;
+  if (argc > USER_MAX_ARGS)
+    return 0;
+
+  u32 string_ptrs[USER_MAX_ARGS];
+  u32 sp = USER_STACK_TOP;
+  u8 *stack = (u8 *)process->user_stack_frame;
+
+  for (int i = argc - 1; i >= 0; i--) {
+    u32 len = strlen(process->argv[i]) + 1;
+
+    if (sp < USER_STACK_TOP - FRAME_SIZE + len)
+      return 0;
+
+    sp -= len;
+    memory_copy(process->argv[i],
+                (char *)stack + (sp - (USER_STACK_TOP - FRAME_SIZE)), len);
+    string_ptrs[i] = sp;
+  }
+
+  sp &= ~3;
+
+  if (sp < USER_STACK_TOP - FRAME_SIZE + 12 + ((argc + 1) * 4) + 4)
+    return 0;
+
+  sp -= 4;
+  *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = 0; // envp[0] NULL
+  u32 envp = sp;
+
+  sp -= 4;
+  *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = 0; // argv NULL
+
+  for (int i = argc - 1; i >= 0; i--) {
+    sp -= 4;
+    *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = string_ptrs[i];
+  }
+
+  u32 argv = sp;
+
+  sp -= 4;
+  *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = envp;
+
+  sp -= 4;
+  *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = argv;
+
+  sp -= 4;
+  *(u32 *)(stack + (sp - (USER_STACK_TOP - FRAME_SIZE))) = argc;
+
+  process->stack_entry = sp;
+  return 1;
+}
+
 static void user_process_init_cwd(user_process_t *process) {
   process->cwd[0] = '/';
   process->cwd[1] = '\0';
@@ -472,6 +572,7 @@ int run_user_process(user_process_t *process) {
   current_user_process = process;
   process->state = USER_PROCESS_RUNNING;
 
+  process->program->stack_top = process->stack_entry;
   int code = run_user_program(process->address_space, process->program);
 
   if ((u32)code == USER_EXIT_FAULT) {
@@ -501,6 +602,7 @@ static void init_user_test_process(user_process_t *process) {
   };
   user_process_init_fds(process);
   user_process_init_cwd(process);
+  user_process_set_args(process, "user_test", 0);
   user_process_assign_pid(process);
 }
 
@@ -554,6 +656,7 @@ static void init_user_fault_process(user_process_t *process) {
   };
   user_process_init_fds(process);
   user_process_init_cwd(process);
+  user_process_set_args(process, "user_fault", 0);
   user_process_assign_pid(process);
 }
 
@@ -584,6 +687,11 @@ task_t *start_user_test_task(void) {
   }
   if (!user_process_map_stack(process)) {
     println("no user stack");
+    user_process_clear(process);
+    return 0;
+  }
+  if (!user_process_build_initial_stack(process)) {
+    println("bad user stack");
     user_process_clear(process);
     return 0;
   }
@@ -624,6 +732,11 @@ task_t *start_user_fault_task(void) {
   }
   if (!user_process_map_stack(process)) {
     println("no user stack");
+    user_process_clear(process);
+    return 0;
+  }
+  if (!user_process_build_initial_stack(process)) {
+    println("bad user stack");
     user_process_clear(process);
     return 0;
   }
@@ -849,7 +962,7 @@ static void user_file_task_entry(void) {
   task_exit();
 }
 
-int run_user_file(char *name) {
+int run_user_file(char *name, char *args) {
   u32 loaded_len;
   u32 entry;
 
@@ -888,6 +1001,7 @@ int run_user_file(char *name) {
   user_process_init_cwd(process);
   user_process_assign_pid(process);
   user_process_set_name(process, name);
+  user_process_set_args(process, name, args);
 
   if (!process->address_space) {
     println("no address space");
@@ -896,6 +1010,11 @@ int run_user_file(char *name) {
   }
   if (!user_process_map_stack(process)) {
     println("no user stack");
+    user_process_clear(process);
+    return -1;
+  }
+  if (!user_process_build_initial_stack(process)) {
+    println("bad user stack");
     user_process_clear(process);
     return -1;
   }
@@ -1396,7 +1515,7 @@ static int user_map_elf_segments(user_process_t *process, u8 *image,
   return 1;
 }
 
-int run_user_elf_file(char *name) {
+int run_user_elf_file(char *name, char *args) {
   u32 loaded_len;
 
   memory_set(elf_load_buf, 0, sizeof(elf_load_buf));
@@ -1436,6 +1555,7 @@ int run_user_elf_file(char *name) {
   user_process_init_cwd(process);
   user_process_assign_pid(process);
   user_process_set_name(process, name);
+  user_process_set_args(process, name, args);
 
   if (!process->address_space) {
     println("no address space");
@@ -1445,6 +1565,11 @@ int run_user_elf_file(char *name) {
 
   if (!user_process_map_stack(process)) {
     println("no user stack");
+    user_process_clear(process);
+    return -1;
+  }
+  if (!user_process_build_initial_stack(process)) {
+    println("bad user stack");
     user_process_clear(process);
     return -1;
   }

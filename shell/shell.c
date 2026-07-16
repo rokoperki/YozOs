@@ -612,6 +612,8 @@ static void cmd_wait(char *a) {
 
 static void cmd_run(char *a) {
   char path[VFS_MAX_PATH];
+  char *program = a;
+  char *program_args = 0;
   u8 magic[4];
   u32 read_len;
 
@@ -620,7 +622,23 @@ static void cmd_run(char *a) {
     return;
   }
 
-  if (!shell_resolve_path(a, path)) {
+  while (*program == ' ')
+    program++;
+
+  program_args = program;
+  while (*program_args && *program_args != ' ')
+    program_args++;
+
+  if (*program_args == ' ') {
+    *program_args = '\0';
+    program_args++;
+    while (*program_args == ' ')
+      program_args++;
+  } else {
+    program_args = 0;
+  }
+
+  if (!shell_resolve_path(program, path)) {
     println("invalid path");
     return;
   }
@@ -635,13 +653,13 @@ static void cmd_run(char *a) {
 
   if (magic[0] == 'Y' && magic[1] == 'O' && magic[2] == 'Z' &&
       magic[3] == '1') {
-    run_user_file(path);
+    run_user_file(path, program_args);
     return;
   }
 
   if (magic[0] == ELF_MAGIC0 && magic[1] == ELF_MAGIC1 &&
       magic[2] == ELF_MAGIC2 && magic[3] == ELF_MAGIC3) {
-    run_user_elf_file(path);
+    run_user_elf_file(path, program_args);
     return;
   }
 
@@ -752,5 +770,5 @@ static void cmd_runelf(char *a) {
     return;
   }
 
-  run_user_elf_file(path);
+  run_user_elf_file(path, 0);
 }
