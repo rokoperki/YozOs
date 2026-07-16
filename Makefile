@@ -130,9 +130,12 @@ USER_ELFBSS_OBJ := user/elfbss.o
 USER_ELFBSS_ELF := user/BSS.ELF
 USER_ARGS_OBJ := user/args.o
 USER_ARGS_ELF := user/ARGS.ELF
+USER_CRT0_OBJ := user/crt0.o
+USER_CARGS_OBJ := user/cargs.o
+USER_CARGS_ELF := user/CARGS.ELF
 USER_BINS      := $(USER_HELLO_BIN) $(USER_ECHO_BIN) $(USER_FAULT_BIN) $(USER_PID_BIN) $(USER_WAITSELF_BIN) $(USER_PPID_BIN) $(USER_KILLSELF_BIN) $(USER_READFILE_BIN) $(USER_ECHOFD_BIN) $(USER_STAT_BIN) $(USER_WRITEFILE_BIN) $(USER_APPEND_BIN) $(USER_SEEK_BIN) $(USER_OVERWRITE_BIN) $(USER_PATH_BIN) $(USER_DIRSTAT_BIN) $(USER_DIRTEST_BIN) $(USER_NESTDIR_BIN)
-USER_ELF_OBJS  := $(USER_ELFHELLO_OBJ) $(USER_ELFBSS_OBJ) $(USER_ARGS_OBJ)
-USER_ELFS      := $(USER_ELFHELLO_ELF) $(USER_ELFBSS_ELF) $(USER_ARGS_ELF)
+USER_ELF_OBJS  := $(USER_ELFHELLO_OBJ) $(USER_ELFBSS_OBJ) $(USER_ARGS_OBJ) $(USER_CRT0_OBJ) $(USER_CARGS_OBJ)
+USER_ELFS      := $(USER_ELFHELLO_ELF) $(USER_ELFBSS_ELF) $(USER_ARGS_ELF) $(USER_CARGS_ELF)
 
 $(USER_HELLO_BIN): user/hello.asm
 	$(ASM) $< -f bin -o $@
@@ -206,6 +209,15 @@ $(USER_ARGS_OBJ): user/args.asm
 $(USER_ARGS_ELF): $(USER_ARGS_OBJ)
 	$(LD) -Ttext 0x8048000 -o $@ $<
 
+$(USER_CRT0_OBJ): user/crt0.asm
+	$(ASM) $< -f elf -o $@
+
+$(USER_CARGS_OBJ): user/cargs.c user/syscall.h
+	$(CC) $(CFLAGS) -Iuser -c $< -o $@
+
+$(USER_CARGS_ELF): $(USER_CRT0_OBJ) $(USER_CARGS_OBJ)
+	$(LD) -Ttext 0x8048000 -o $@ $^
+
 user-programs: $(USER_BINS) $(USER_ELFS)
 
 install-hello: $(DISK_IMG) $(USER_HELLO_BIN)
@@ -233,6 +245,7 @@ install-user-programs: $(DISK_IMG) $(USER_BINS) $(USER_ELFS)
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ELFHELLO_ELF) $(USER_DISK_DIR)/HELLO.ELF
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ELFBSS_ELF) $(USER_DISK_DIR)/BSS.ELF
 	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_ARGS_ELF) $(USER_DISK_DIR)/ARGS.ELF
+	$(PYTHON) tools/fat16_put.py $(DISK_IMG) $(USER_CARGS_ELF) $(USER_DISK_DIR)/CARGS.ELF
 
 prepare-user-disk: $(OS_IMAGE) reset-user-disk
 	$(MAKE) install-user-programs

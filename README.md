@@ -29,13 +29,14 @@ execution:
 `HELLO.BIN`, `ECHO.BIN`, `ECHOFD.BIN`, `PID.BIN`, `PPID.BIN`, `WAITSELF.BIN`,
 `KILLSELF.BIN`, `FAULT.BIN`, `READFILE.BIN`, `STAT.BIN`, `WRITEF.BIN`,
 `APPEND.BIN`, `SEEK.BIN`, `OVERWR.BIN`, `PATH.BIN`, `DIRSTAT.BIN`,
-`DIRTEST.BIN`, `NESTDIR.BIN`, `HELLO.ELF`, and `BSS.ELF`.
+`DIRTEST.BIN`, `NESTDIR.BIN`, `HELLO.ELF`, `BSS.ELF`, and `ARGS.ELF`.
 
 Current limits:
 
 - Static ELF support is early: program headers, loadable segments, BSS zeroing,
-  entry validation, and basic permissions work, but there is no `argc`/`argv`
-  stack ABI, C runtime, libc, dynamic linking, or `exec` yet.
+  entry validation, basic permissions, and a minimal `argc`/`argv`/empty-`envp`
+  stack ABI work, but there is no C runtime, libc, dynamic linking, or `exec`
+  yet.
 - The filesystem has no long names, directory fd API, or large-file support.
 - FAT writes are still capped at small fixed-size files.
 
@@ -114,6 +115,7 @@ MKDIR A/B
 RUN TEST/NESTDIR.BIN
 RUN TEST/HELLO.ELF
 RUN TEST/BSS.ELF
+RUN TEST/ARGS.ELF alpha beta
 ```
 
 ## Booting on real hardware
